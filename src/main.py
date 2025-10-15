@@ -1,3 +1,4 @@
+# src/main.py
 import asyncio
 import os
 from contextlib import asynccontextmanager
@@ -10,15 +11,23 @@ from alembic.config import Config
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy import text
 from core.cache import init_redis
 from core.config import settings
-from db.database import AsyncSessionLocal, create_tables, setup_rls, engine
+from db.database import (
+    AsyncSessionLocal,
+    create_tables,
+    setup_rls,
+    engine,
+    disconnect_db,
+)
 from utils.exception_handler import setup_exception_handlers
 from utils.logger import setup_logger
 from utils.rate_limiter import limiter
-from routes import 
+from routes import auth, patients
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
 
@@ -76,58 +85,31 @@ async def initialize_rls():
         raise
 
 
-async def create_initial_tenant():
-    """Create initial tenant for development/demo purposes"""
-    try:
-        from models.tenant import Tenant
-        from sqlalchemy import select
-        
-        async with AsyncSessionLocal() as session:
-            # Check if default tenant exists
-            result = await session.execute(
-                select(Tenant).where(Tenant.slug == "default")
-            )
-            existing_tenant = result.scalar_one_or_none()
-            
-            if not existing_tenant and settings.CREATE_DEFAULT_TENANT:
-                logger.info("Creating default tenant...")
-                default_tenant = Tenant(
-                    name="Default Dental Clinic",
-                    slug="default",
-                    contact_email="admin@dentalclinic.com",
-                    contact_phone="+1234567890",
-                    address="123 Main Street, Dental City",
-                    tier="basic",
-                    status="active"
-                )
-                session.add(default_tenant)
-                await session.commit()
-                logger.info("Default tenant created successfully")
-    except Exception as e:
-        logger.warning(f"Could not create default tenant: {e}")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Async context manager with proper error handling"""
-    logger.info("Starting application...")
+    logger.info("Starting Dental Clinic Management System...")
 
     try:
+        # Database initialization
+        logger.info("Initializing database...")
+        await create_tables()
+
         # Database check
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
         logger.info("Database connection verified")
-        
+
         # Create tables and setup RLS
         await create_tables()
         logger.info("Database tables created")
-        
+
         # Initialize RLS policies
         await initialize_rls()
-        
+
         # Create initial tenant for development
         if settings.ENVIRONMENT in ["development", "staging"]:
-            await create_initial_tenant()
+            await create_default_tenant()
 
         # Redis initialization
         if settings.REQUIRE_REDIS:
@@ -153,20 +135,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error(f"Startup failed: {str(e)}")
         raise
     finally:
-        logger.info("Shutting down...")
-        await engine.dispose()
-
-
-class MyFastAPI(FastAPI):
-    pass
+        logger.info("Shutting down application...")
+        await disconnect_db()
 
 
 # Initialize the FastAPI application with lifespan management
-app = MyFastAPI(
-    title="Dental Practice Management System",
-    description="Comprehensive API for multi-tenant dental practice management",
+app = FastAPI(
+    title="Dental Clinic Management System",
+    description="Multi-tenant SaaS for dental practice management",
     version="2.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
+    redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
 )
 
 # Add Tenant Middleware for multi-tenancy
@@ -174,6 +154,7 @@ app.add_middleware(TenantMiddleware)
 
 # Rate limiting configuration
 app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # Exception handling
@@ -185,22 +166,21 @@ app.add_middleware(
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "X-Tenant-ID"],  # Include tenant header
+    allow_headers=["*", "X-Tenant-ID", "X-Tenant-Slug"],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-Tenant-ID"],
 )
 
 
 # Include all routers with prefixes and tags
-api_prefix = settings.API_PREFIX
-
-app.include_router()
+app.include_router(auth.router, prefix=settings.API_PREFIX)
+app.include_router(patients.router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
 async def root():
     """Health check endpoint"""
     return {
-        "message": "Dental Practice Management System API",
+        "message": "Dental Clinic Management System API",
         "status": "healthy",
         "version": app.version,
         "multi_tenant": True,
@@ -211,12 +191,27 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check endpoint"""
+    db_healthy = await check_db_connection()
     return {
-        "status": "ok",
-        "database": "connected" if await check_db_connection() else "disconnected",
+        "status": "healthy" if db_healthy else "degraded",
+        "database": "connected" if db_healthy else "disconnected",
         "cache": "enabled" if settings.CACHE_ENABLED else "disabled",
         "multi_tenant": True,
         "rls_enabled": True,
+        "environment": settings.ENVIRONMENT,
+    }
+
+
+@app.get("/tenant/health")
+async def tenant_health_check(tenant=Depends(get_current_tenant)):
+    """Tenant-specific health check"""
+    return {
+        "status": "healthy",
+        "tenant_id": str(tenant.id),
+        "tenant_name": tenant.name,
+        "tenant_slug": tenant.slug,
+        "tier": tenant.tier,
+        "status": tenant.status,
     }
 
 
@@ -241,7 +236,7 @@ async def tenant_info(tenant=Depends(get_current_tenant)):
         "tenant_name": tenant.name,
         "tenant_slug": tenant.slug,
         "tier": tenant.tier,
-        "status": tenant.status
+        "status": tenant.status,
     }
 
 
@@ -250,20 +245,18 @@ async def list_tenants():
     """Public endpoint to list available tenants (no tenant context required)"""
     from sqlalchemy import select
     from models.tenant import Tenant
-    
+
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Tenant).where(Tenant.status == "active")
-        )
+        result = await session.execute(select(Tenant).where(Tenant.status == "active"))
         tenants = result.scalars().all()
-        
+
         return {
             "tenants": [
                 {
                     "id": str(tenant.id),
                     "name": tenant.name,
                     "slug": tenant.slug,
-                    "tier": tenant.tier
+                    "tier": tenant.tier,
                 }
                 for tenant in tenants
             ]
@@ -281,27 +274,41 @@ async def check_db_connection() -> bool:
         return False
 
 
-# Tenant-specific health check
-@app.get("/tenant/health")
-async def tenant_health_check(tenant=Depends(get_current_tenant)):
-    """Tenant-specific health check"""
+async def create_default_tenant():
+    """Create default tenant for development"""
+    from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy import select
-    from models.user import User
-    
+    from models.tenant import Tenant
+    from db.database import AsyncSessionLocal, create_tenant_config
+
     async with AsyncSessionLocal() as session:
-        # Test tenant-specific query
-        result = await session.execute(
-            select(User).where(User.tenant_id == tenant.id).limit(1)
-        )
-        user_exists = result.scalar_one_or_none() is not None
-        
-        return {
-            "status": "ok",
-            "tenant_id": str(tenant.id),
-            "tenant_name": tenant.name,
-            "user_data_accessible": user_exists,
-            "database": "connected",
-        }
+        try:
+            # Check if default tenant exists
+            result = await session.execute(
+                select(Tenant).where(Tenant.slug == "default")
+            )
+            existing_tenant = result.scalar_one_or_none()
+
+            if not existing_tenant and settings.CREATE_DEFAULT_TENANT:
+                logger.info("Creating default tenant...")
+                default_tenant = Tenant(
+                    name="Default Dental Clinic",
+                    slug="default",
+                    contact_email="admin@dentalclinic.com",
+                    contact_phone="+1234567890",
+                    address="123 Main Street, Dental City",
+                    tier="basic",
+                    status="active",
+                )
+                session.add(default_tenant)
+                await session.commit()
+
+                # Create tenant configuration
+                await create_tenant_config(str(default_tenant.id))
+                logger.info("Default tenant created successfully")
+
+        except Exception as e:
+            logger.warning(f"Could not create default tenant: {e}")
 
 
 if __name__ == "__main__":
@@ -324,9 +331,9 @@ if __name__ == "__main__":
         reload=settings.RELOAD,
         reload_dirs=watch_dirs,
         reload_excludes=["*.pyc", "*.tmp", "*.swp"],
-        workers=settings.WORKERS_COUNT,
+        workers=1 if settings.RELOAD else settings.WORKERS_COUNT,
         log_level="info",
-        access_log=False,
+        access_log=True,
         timeout_graceful_shutdown=10,
         limit_concurrency=100,
         limit_max_requests=1000,
