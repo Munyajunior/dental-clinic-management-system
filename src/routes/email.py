@@ -1,7 +1,7 @@
 # src/routes/email.py
 from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, any
+from typing import List, Optional, Any
 from uuid import UUID
 
 from db.database import get_db
