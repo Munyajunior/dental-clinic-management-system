@@ -1,0 +1,28 @@
+<!-- src/templates/email/appointment_confirmation.txt -->
+APPOINTMENT CONFIRMATION
+
+Dear {{ patient_name }},
+
+Your dental appointment has been confirmed. Here are your appointment details:
+
+APPOINTMENT DETAILS:
+Date & Time: {{ appointment_date }}
+Dentist: Dr. {{ dentist_name }}
+Appointment Type: {{ appointment_type }}
+Location: {{ location }}
+
+IMPORTANT REMINDERS:
+- Please arrive 15 minutes before your scheduled appointment time
+- Bring your insurance card and ID
+- Let us know if you need to reschedule at least 24 hours in advance
+
+If you have any questions or need to reschedule, please contact us at {{ contact_email }} or call our office.
+
+We look forward to seeing you!
+
+Best regards,
+The Team at {{ clinic_name }}
+
+---
+© 2025 {{ clinic_name }}. All rights reserved.
+This is an automated message, please do not reply to this email.

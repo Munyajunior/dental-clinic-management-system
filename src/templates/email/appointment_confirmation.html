@@ -1,0 +1,57 @@
+<!-- src/templates/email/appointment_confirmation.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appointment Confirmation</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2563eb; color: white; padding: 20px; text-align: center; }
+        .content { background: #f9fafb; padding: 30px; }
+        .appointment-details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
+        .button { background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Appointment Confirmed</h1>
+        </div>
+        
+        <div class="content">
+            <p>Dear <strong>{{ patient_name }}</strong>,</p>
+            
+            <p>Your dental appointment has been confirmed. Here are your appointment details:</p>
+            
+            <div class="appointment-details">
+                <h3>Appointment Details</h3>
+                <p><strong>Date & Time:</strong> {{ appointment_date }}</p>
+                <p><strong>Dentist:</strong> Dr. {{ dentist_name }}</p>
+                <p><strong>Appointment Type:</strong> {{ appointment_type }}</p>
+                <p><strong>Location:</strong> {{ location }}</p>
+            </div>
+            
+            <p><strong>Important Reminders:</strong></p>
+            <ul>
+                <li>Please arrive 15 minutes before your scheduled appointment time</li>
+                <li>Bring your insurance card and ID</li>
+                <li>Let us know if you need to reschedule at least 24 hours in advance</li>
+            </ul>
+            
+            <p>If you have any questions or need to reschedule, please contact us at {{ contact_email }} or call our office.</p>
+            
+            <p>We look forward to seeing you!</p>
+            
+            <p>Best regards,<br>The Team at {{ clinic_name }}</p>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; 2025 {{ clinic_name }}. All rights reserved.</p>
+            <p>This is an automated message, please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>
