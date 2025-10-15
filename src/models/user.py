@@ -78,6 +78,9 @@ class User(Base):
 
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
 
     # As treating dentist
     appointments = relationship(
