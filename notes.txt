@@ -1,0 +1,8 @@
+# Install production dependencies only
+uv sync
+
+# Install with development dependencies
+uv sync --with dev
+
+# Or if you want to install all optional dependencies
+uv sync --all-extras
