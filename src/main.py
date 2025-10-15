@@ -27,7 +27,22 @@ from db.database import (
 from utils.exception_handler import setup_exception_handlers
 from utils.logger import setup_logger
 from utils.rate_limiter import limiter
-from routes import auth, patients
+from routes import (
+    auth_router,
+    users_router,
+    medical_records_router,
+    tenants_router,
+    email_router,
+    invoices_router,
+    patients_router,
+    services_router,
+    dashboard_router,
+    treatments_router,
+    newsletters_router,
+    appointments_router,
+    consultations_router,
+    prescriptions_router,
+)
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
 
@@ -171,9 +186,20 @@ app.add_middleware(
 )
 
 
-# Include all routers with prefixes and tags
-app.include_router(auth.router, prefix=settings.API_PREFIX)
-app.include_router(patients.router, prefix=settings.API_PREFIX)
+app.include_router(auth_router, prefix=settings.API_PREFIX)
+app.include_router(tenants_router, prefix=settings.API_PREFIX)
+app.include_router(users_router, prefix=settings.API_PREFIX)
+app.include_router(email_router, prefix=settings.API_PREFIX)
+app.include_router(patients_router, prefix=settings.API_PREFIX)
+app.include_router(appointments_router, prefix=settings.API_PREFIX)
+app.include_router(services_router, prefix=settings.API_PREFIX)
+app.include_router(consultations_router, prefix=settings.API_PREFIX)
+app.include_router(treatments_router, prefix=settings.API_PREFIX)
+app.include_router(invoices_router, prefix=settings.API_PREFIX)
+app.include_router(medical_records_router, prefix=settings.API_PREFIX)
+app.include_router(prescriptions_router, prefix=settings.API_PREFIX)
+app.include_router(newsletters_router, prefix=settings.API_PREFIX)
+app.include_router(dashboard_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
