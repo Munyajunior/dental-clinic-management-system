@@ -8,8 +8,9 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Environment setting
-    PRODUCTION: bool = Field()
-    DEVELOPMENT: bool = Field(True)
+    ENVIRONMENT: str = Field(
+        "development", description="Environment: development, staging, production"
+    )
 
     # API settings
     API_PREFIX: str = Field("")
@@ -43,13 +44,11 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field()
     ACCESS_TOKEN_EXPIRE_HOURS: int = Field()
     ACCESS_TOKEN_EXPIRE: int = Field()
+    REFRESH_TOKEN_ROTATION: bool = Field()
 
     # RLS and Multi-tenancy
     CREATE_DEFAULT_TENANT: bool = Field(
         True, description="Create default tenant on startup"
-    )
-    ENVIRONMENT: str = Field(
-        "development", description="Environment: development, staging, production"
     )
 
     # Tenant identification methods
