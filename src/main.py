@@ -340,14 +340,14 @@ async def create_default_tenant():
 if __name__ == "__main__":
     # Configure reload directories more precisely
     watch_dirs = [
-        os.path.join("backend", "core"),
-        os.path.join("backend", "routes"),
-        os.path.join("backend", "models"),
-        os.path.join("backend", "schemas"),
-        os.path.join("backend", "utils"),
-        os.path.join("backend", "middleware"),
-        os.path.join("backend", "dependencies"),
-        os.path.join("backend", "db"),
+        os.path.join("core"),
+        os.path.join("routes"),
+        os.path.join("models"),
+        os.path.join("schemas"),
+        os.path.join("utils"),
+        os.path.join("middleware"),
+        os.path.join("dependencies"),
+        os.path.join("db"),
     ]
 
     uv.run(
