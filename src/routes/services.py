@@ -1,7 +1,7 @@
 # src/routes/services.py
 from fastapi import APIRouter, Depends, status, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, any
+from typing import List, Optional, Any
 from uuid import UUID
 from db.database import get_db
 from schemas.service_schemas import (
