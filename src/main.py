@@ -45,6 +45,7 @@ from routes import (
 )
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
+from utils.database_migration import verify_table_structure, add_missing_columns
 
 # Disable specific loggers
 for log in ["watchfiles", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"]:
@@ -89,14 +90,27 @@ async def run_migrations():
         logger.error(f"Database migration failed: {str(e)}")
 
 
-async def initialize_rls():
-    """Initialize Row-Level Security policies"""
+async def initialize_database():
+    """Initialize database with proper error handling"""
     try:
+        # Create tables
+        await create_tables()
+        logger.info("Database tables created")
+
+        # Verify table structure
+        async with AsyncSessionLocal() as session:
+            structure_ok = await verify_table_structure(session)
+            if not structure_ok:
+                logger.warning("Table structure issues detected, running migration...")
+                await add_missing_columns(session)
+
+        # Setup RLS after tables are created
         logger.info("Setting up Row-Level Security policies...")
         await setup_rls()
         logger.info("RLS policies configured successfully")
+
     except Exception as e:
-        logger.error(f"RLS setup failed: {str(e)}")
+        logger.error(f"Database initialization failed: {e}")
         raise
 
 
@@ -108,19 +122,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         # Database initialization
         logger.info("Initializing database...")
-        await create_tables()
+        await initialize_database()
 
         # Database check
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         logger.info("Database connection verified")
-
-        # Create tables and setup RLS
-        await create_tables()
-        logger.info("Database tables created")
-
-        # Initialize RLS policies
-        await initialize_rls()
 
         # Create initial tenant for development
         if settings.ENVIRONMENT in ["development", "staging"]:
