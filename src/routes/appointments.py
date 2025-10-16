@@ -1,5 +1,5 @@
 # src/routes/appointments.py
-from fastapi import APIRouter, Depends, status, HTTPException, Query
+from fastapi import APIRouter, Depends, status, HTTPException, Query, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Any
 from uuid import UUID
@@ -170,7 +170,7 @@ async def get_available_slots(
 
 
 @router.get(
-    "/upcoming/{days}",
+    "/upcoming/",
     response_model=List[AppointmentPublic],
     summary="Get upcoming appointments",
     description="Get upcoming appointments within the next N days",
