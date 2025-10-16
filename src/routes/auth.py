@@ -1,9 +1,7 @@
 # src/routes/auth.py (Enhanced)
-from fastapi import APIRouter, Depends, status, HTTPException, Body
-from fastapi.security import HTTPBearer
+from fastapi import APIRouter, Depends, status, HTTPException, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any
-from uuid import UUID
 from db.database import get_db
 from schemas.user_schemas import (
     UserLogin,
@@ -12,9 +10,8 @@ from schemas.user_schemas import (
     UserPublic,
 )
 from schemas.auth_schemas import TokenResponse
-from schemas.auth_schemas import RefreshTokenRequest, LogoutRequest
-from services.auth_service import auth_service, security
-from services.user_service import user_service
+from schemas.auth_schemas import RefreshTokenRequest, LogoutRequest, LogoutResponse
+from services.auth_service import auth_service
 from utils.rate_limiter import limiter
 from utils.logger import setup_logger
 
@@ -30,7 +27,9 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
     description="Authenticate user and return access and refresh tokens",
 )
 @limiter.limit("5/minute")
-async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)) -> Any:
+async def login(
+    request: Request, login_data: UserLogin, db: AsyncSession = Depends(get_db)
+) -> Any:
     """User login endpoint"""
     result = await auth_service.login(db, login_data)
     return {
@@ -65,6 +64,7 @@ async def refresh_tokens(
 
 @router.post(
     "/logout",
+    response_model=LogoutResponse,
     summary="User logout",
     description="Logout user by revoking refresh token",
 )
@@ -72,24 +72,25 @@ async def logout(
     logout_data: LogoutRequest = Body(...),
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
-) -> Any:
+) -> LogoutResponse:
     """User logout endpoint"""
     await auth_service.logout(db, logout_data.refresh_token)
-    return {"message": "Successfully logged out"}
+    return LogoutResponse(message="Successfully logged out")
 
 
 @router.post(
     "/logout-all",
+    response_model=LogoutResponse,
     summary="Logout all devices",
     description="Logout user from all devices by revoking all refresh tokens",
 )
 async def logout_all(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
-) -> Any:
+) -> LogoutResponse:
     """Logout from all devices endpoint"""
     await auth_service.logout_all(db, current_user.id)
-    return {"message": "Successfully logged out from all devices"}
+    return LogoutResponse(message="Successfully logged out from all devices")
 
 
 @router.post(
@@ -100,7 +101,9 @@ async def logout_all(
     description="Create a new user account",
 )
 @limiter.limit("10/minute")
-async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)) -> Any:
+async def register(
+    request: Request, user_data: UserCreate, db: AsyncSession = Depends(get_db)
+) -> Any:
     """User registration endpoint"""
     user = await auth_service.create_user(db, user_data)
     return UserPublic.from_orm(user)
