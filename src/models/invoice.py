@@ -91,6 +91,7 @@ class InvoiceItem(Base):
     __tablename__ = "invoice_items"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
     invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=False)
     treatment_item_id = Column(
         UUID(as_uuid=True), ForeignKey("treatment_items.id"), nullable=True
@@ -103,6 +104,7 @@ class InvoiceItem(Base):
     tax_rate = Column(Numeric(5, 2), default=0.0)
 
     # Relationships
+    tenant = relationship("Tenant")
     invoice = relationship("Invoice", back_populates="invoice_items")
     treatment_item = relationship("TreatmentItem")
 
