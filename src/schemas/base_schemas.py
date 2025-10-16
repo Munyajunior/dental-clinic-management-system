@@ -13,6 +13,7 @@ class BaseSchema(BaseModel):
         populate_by_name=True,
         str_strip_whitespace=True,
         use_enum_values=True,
+        arbitrary_types_allowed=True,
     )
 
 
