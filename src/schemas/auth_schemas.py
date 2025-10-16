@@ -21,3 +21,13 @@ class LogoutRequest(BaseModel):
     """Logout request schema"""
 
     refresh_token: str
+
+
+class LogoutResponse(BaseModel):
+    """Logout response schema"""
+
+    success: bool = True
+    message: Optional[str] = None
+
+    def dict(self, **kwargs):
+        return super().model_dump(**kwargs)
