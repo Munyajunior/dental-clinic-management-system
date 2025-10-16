@@ -68,13 +68,9 @@ class Settings(BaseSettings):
     WORKERS_COUNT: int = Field(1)
     RELOAD: bool = Field(True)
 
-    # Email settings
-    MAIL_USERNAME: str = Field("")
-    MAIL_FROM: str = Field("")
-    MAIL_PORT: int = Field(465)
-    MAIL_SERVER: str = Field("")
-    MAILGUN_API_KEY: str = Field("")
-    MAILGUN_DOMAIN: str = Field("")
+    # Medical service settings
+    FILE_ENCRYPTION_KEY: str = Field("")
+    MEDICAL_RECORDS_STORAGE_PATH: str = Field("")
 
     @property
     def POSTGRESQL_DATABASE_URL(self) -> str:
