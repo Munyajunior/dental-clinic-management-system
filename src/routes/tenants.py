@@ -1,5 +1,5 @@
 # src/routes/tenants.py
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Any
 from uuid import UUID
@@ -27,6 +27,7 @@ router = APIRouter(prefix="/tenants", tags=["tenants"])
 )
 @limiter.limit("5/minute")
 async def create_tenant(
+    request: Request,
     tenant_data: TenantCreate,
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
