@@ -38,13 +38,18 @@ class ServiceService(BaseService):
                 )
 
             # Create the service
-            service = await self.create(db, service_data)
+            service = Service(**service_data.dict())
+            db.add(service)
+            await db.commit()
+            await db.refresh(service)
+
             logger.info(f"Created service: {service.code} ({service.name})")
             return service
 
         except HTTPException:
             raise
         except Exception as e:
+            await db.rollback()
             logger.error(f"Error creating service: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -288,24 +293,56 @@ class ServiceService(BaseService):
         self, db: AsyncSession, service_id: UUID, period_days: int = 30
     ) -> Dict[str, Any]:
         """Calculate revenue for a specific service over a period"""
-        # This would typically join with treatment_items and invoices tables
-        # For now, returning a placeholder implementation
         try:
+            from models.treatment_item import TreatmentItem
+            from models.invoice_item import InvoiceItem
+            from models.invoice import Invoice, InvoiceStatus
+            from datetime import datetime, timedelta
+
             service = await self.get(db, service_id)
             if not service:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Service not found"
                 )
 
-            # Placeholder implementation - you would need to implement
-            # the actual revenue calculation based on your business logic
+            # Calculate start date for the period
+            start_date = datetime.utcnow() - timedelta(days=period_days)
+
+            # Get revenue data from treatment items and invoices
+            revenue_result = await db.execute(
+                select(
+                    func.sum(TreatmentItem.quantity * TreatmentItem.unit_price).label(
+                        "total_revenue"
+                    ),
+                    func.count(TreatmentItem.id).label("total_treatments"),
+                )
+                .select_from(TreatmentItem)
+                .join(InvoiceItem, InvoiceItem.treatment_item_id == TreatmentItem.id)
+                .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
+                .where(
+                    TreatmentItem.service_id == service_id,
+                    Invoice.status == InvoiceStatus.PAID,
+                    Invoice.paid_date >= start_date,
+                )
+            )
+
+            revenue_data = revenue_result.first()
+
+            total_revenue = revenue_data.total_revenue or Decimal("0.00")
+            total_treatments = revenue_data.total_treatments or 0
+            average_revenue = (
+                total_revenue / total_treatments
+                if total_treatments > 0
+                else Decimal("0.00")
+            )
+
             return {
                 "service_id": service_id,
                 "service_name": service.name,
                 "period_days": period_days,
-                "estimated_revenue": Decimal("0.00"),  # Placeholder
-                "total_treatments": 0,  # Placeholder
-                "average_revenue_per_treatment": Decimal("0.00"),  # Placeholder
+                "total_revenue": total_revenue,
+                "total_treatments": total_treatments,
+                "average_revenue_per_treatment": average_revenue,
             }
 
         except HTTPException:
