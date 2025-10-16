@@ -93,26 +93,30 @@ async def get_db_session() -> AsyncSession:
 async def setup_rls():
     """Setup Row-Level Security policies for multi-tenancy"""
     async with engine.begin() as conn:
-        # Create schema for application settings
-        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
+        try:
+            # Create schema for application settings
+            await conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
 
-        # Create function to set tenant context
-        await conn.execute(
-            text(
-                """
-            CREATE OR REPLACE FUNCTION app.set_tenant_id(tenant_id UUID)
-            RETURNS VOID AS $$
-            BEGIN
-                PERFORM set_config('app.tenant_id', tenant_id::text, false);
-            END;
-            $$ LANGUAGE plpgsql;
-        """
+            # Create function to set tenant context
+            await conn.execute(
+                text(
+                    """
+                CREATE OR REPLACE FUNCTION app.set_tenant_id(tenant_id UUID)
+                RETURNS VOID AS $$
+                BEGIN
+                    PERFORM set_config('app.tenant_id', tenant_id::text, false);
+                END;
+                $$ LANGUAGE plpgsql;
+            """
+                )
             )
-        )
+        except Exception as e:
+            logger.warning(f"Schema creation warning: {e}")
 
-        # Enable RLS on all tenant-aware tables
-        tables = [
+        # Enable RLS on all tenant-aware tables with proper error handling
+        tables_with_tenant = [
             "users",
+            "refresh_tokens",
             "patients",
             "services",
             "appointments",
@@ -128,7 +132,7 @@ async def setup_rls():
             "newsletter_subscriptions",
         ]
 
-        for table in tables:
+        for table in tables_with_tenant:
             try:
                 # Enable RLS on table
                 await conn.execute(
@@ -154,18 +158,25 @@ async def setup_rls():
                 logger.info(f"RLS policy created for table: {table}")
 
             except Exception as e:
-                logger.warning(f"Failed to setup RLS for {table}: {e}")
-                continue
+                logger.error(f"Failed to setup RLS for {table}: {e}")
+                # Continue with other tables instead of aborting
 
         # Special policy for tenants table
         try:
             await conn.execute(text("ALTER TABLE tenants ENABLE ROW LEVEL SECURITY"))
 
+            # Drop existing policies
+            await conn.execute(
+                text("DROP POLICY IF EXISTS tenant_self_policy ON tenants")
+            )
+            await conn.execute(
+                text("DROP POLICY IF EXISTS tenant_lookup_policy ON tenants")
+            )
+
             # Policy for tenants to see only themselves
             await conn.execute(
                 text(
                     """
-                DROP POLICY IF EXISTS tenant_self_policy ON tenants;
                 CREATE POLICY tenant_self_policy ON tenants
                 FOR ALL USING (id::text = current_setting('app.tenant_id', true))
             """
@@ -176,17 +187,18 @@ async def setup_rls():
             await conn.execute(
                 text(
                     """
-                DROP POLICY IF EXISTS tenant_lookup_policy ON tenants;
                 CREATE POLICY tenant_lookup_policy ON tenants
                 FOR SELECT USING (true)
             """
                 )
             )
 
-        except Exception as e:
-            logger.warning(f"Failed to setup RLS for tenants table: {e}")
+            logger.info("RLS policies created for tenants table")
 
-        logger.info("RLS policies configured successfully")
+        except Exception as e:
+            logger.error(f"Failed to setup RLS for tenants table: {e}")
+
+        logger.info("RLS policies configuration completed")
 
 
 async def create_tables():
@@ -207,33 +219,37 @@ async def create_tables():
 async def create_tenant_config(tenant_id: str):
     """Create tenant-specific configuration"""
     async with engine.begin() as conn:
-        # Ensure tenant config table exists
-        await conn.execute(
-            text(
-                """
-            CREATE TABLE IF NOT EXISTS app.tenant_config (
-                id SERIAL PRIMARY KEY,
-                tenant_id UUID NOT NULL,
-                config_key VARCHAR(100) NOT NULL,
-                config_value JSONB,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE(tenant_id, config_key)
-            )
-        """
-            )
-        )
-
-        # Insert tenant configuration
-        await conn.execute(
-            text(
-                """
-                INSERT INTO app.tenant_config (tenant_id, config_key, config_value)
-                VALUES (:tenant_id, 'isolation_level', '"shared"')
-                ON CONFLICT (tenant_id, config_key) DO NOTHING
+        try:
+            # Ensure tenant config table exists
+            await conn.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS app.tenant_config (
+                    id SERIAL PRIMARY KEY,
+                    tenant_id UUID NOT NULL,
+                    config_key VARCHAR(100) NOT NULL,
+                    config_value JSONB,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(tenant_id, config_key)
+                )
             """
-            ),
-            {"tenant_id": tenant_id},
-        )
+                )
+            )
+
+            # Insert tenant configuration
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO app.tenant_config (tenant_id, config_key, config_value)
+                    VALUES (:tenant_id, 'isolation_level', '"shared"')
+                    ON CONFLICT (tenant_id, config_key) DO NOTHING
+                """
+                ),
+                {"tenant_id": tenant_id},
+            )
+        except Exception as e:
+            logger.warning(f"Could not create tenant config: {e}")
+            # Don't raise, as this is not critical for startup
 
 
 async def get_tenant_config(tenant_id: str) -> Dict[str, Any]:
