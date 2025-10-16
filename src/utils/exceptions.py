@@ -63,7 +63,7 @@ class BadRequestException(BaseAPIException):
 
 
 async def handle_db_exception(
-    db: AsyncSession, logger: Logger, operation: str, exception: Exception
+    db: AsyncSession, logger: logger, operation: str, exception: Exception
 ):
     """Handle database exceptions with consistent logging and rollback"""
     await db.rollback()
