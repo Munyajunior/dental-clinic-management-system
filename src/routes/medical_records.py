@@ -109,16 +109,22 @@ async def get_medical_record(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """Get medical record by ID endpoint"""
-    record = await medical_record_service.get(db, record_id)
+    record = await medical_record_service.get_medical_record_with_relations(
+        db, record_id
+    )
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Medical record not found"
         )
 
     record_detail = MedicalRecordDetail.from_orm(record)
-    record_detail.created_by_name = (
-        f"{record.creator.first_name} {record.creator.last_name}"
-    )
+    # Add creator name if relationships are loaded
+    if hasattr(record, "creator") and record.creator:
+        record_detail.created_by_name = (
+            f"{record.creator.first_name} {record.creator.last_name}"
+        )
+    else:
+        record_detail.created_by_name = "Unknown"
 
     return record_detail
 
@@ -134,11 +140,35 @@ async def download_medical_record(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """Download medical record file endpoint"""
+    # Get the record first to verify it exists
+    record = await medical_record_service.get(db, record_id)
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Medical record not found"
+        )
+
+    if not record.file_path or not record.file_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No file attached to this record",
+        )
+
+    # Get file data
     file_data = await medical_record_service.get_file_data(db, record_id)
     if not file_data:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found or could not be retrieved",
         )
 
-    # Return file data (implementation depends on storage strategy)
-    return {"message": "File download endpoint - implement based on storage"}
+    # Return file as downloadable response
+    from fastapi.responses import Response
+
+    return Response(
+        content=base64.b64decode(file_data["file_data"]),
+        media_type=file_data["mime_type"] or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{file_data['file_name']}\"",
+            "Content-Length": str(file_data["file_size"]),
+        },
+    )
