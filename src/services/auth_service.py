@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
+from db.database import get_db
 from sqlalchemy import select, delete
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -18,7 +19,7 @@ from .base_service import BaseService
 logger = setup_logger("AUTH_SERVICE")
 
 security = HTTPBearer()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
 class AuthService:
@@ -246,7 +247,7 @@ class AuthService:
 
     async def get_current_user(
         self,
-        db: AsyncSession,
+        db: AsyncSession = Depends(get_db),
         credentials: HTTPAuthorizationCredentials = Depends(security),
     ) -> User:
         credentials_exception = HTTPException(
