@@ -27,6 +27,7 @@ class TreatmentItem(Base):
     __tablename__ = "treatment_items"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
     treatment_id = Column(
         UUID(as_uuid=True), ForeignKey("treatments.id"), nullable=False
     )
@@ -52,6 +53,7 @@ class TreatmentItem(Base):
     # Relationships
     treatment = relationship("Treatment", back_populates="treatment_items")
     service = relationship("Service", back_populates="treatment_items")
+    tenant = relationship("Tenant")
 
     @property
     def total_price(self):
