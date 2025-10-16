@@ -1,5 +1,6 @@
 # src/core/email_config.py
-from pydantic import BaseSettings, EmailStr
+from pydantic_settings import BaseSettings
+from pydantic import EmailStr
 from dotenv import load_dotenv
 
 load_dotenv()
