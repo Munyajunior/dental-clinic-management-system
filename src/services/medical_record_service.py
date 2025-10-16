@@ -1,13 +1,12 @@
-# src/services/medical_record_service.py
+# src/services/medical_record_service.py (Fixed SecureFileStorage)
 import os
-import uuid
 import hashlib
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
 import base64
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 from models.medical_record import MedicalRecord, RecordType
 from models.patient import Patient
@@ -16,26 +15,41 @@ from schemas.medical_record_schemas import MedicalRecordCreate, MedicalRecordUpd
 from utils.logger import setup_logger
 from .base_service import BaseService
 import aiofiles
-from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
 import secrets
+from core.config import settings
 
 logger = setup_logger("MEDICAL_RECORD_SERVICE")
 
 
 class SecureFileStorage:
-    """Secure file storage for medical records with encryption"""
+    """Secure file storage for medical records with AES-256 encryption"""
 
     def __init__(self):
-        self.storage_path = os.getenv(
-            "MEDICAL_RECORDS_STORAGE_PATH", "./medical_records"
-        )
-        self.encryption_key = os.getenv("FILE_ENCRYPTION_KEY")
+        self.storage_path = settings.MEDICAL_RECORDS_STORAGE_PATH
 
-        if not self.encryption_key:
+        # Get the hexadecimal AES key from settings
+        hex_key = settings.FILE_ENCRYPTION_KEY
+
+        if not hex_key:
             logger.warning("FILE_ENCRYPTION_KEY not set, generating temporary key")
-            self.encryption_key = Fernet.generate_key()
+            # Generate a random 256-bit (32-byte) key and store as hex
+            hex_key = secrets.token_hex(32)
+            logger.warning(f"Generated temporary key: {hex_key}")
 
-        self.cipher_suite = Fernet(self.encryption_key)
+        # Convert hex key to bytes
+        try:
+            self.encryption_key = bytes.fromhex(hex_key)
+            if len(self.encryption_key) != 32:  # 256 bits = 32 bytes
+                raise ValueError("AES-256 key must be 32 bytes (64 hex characters)")
+        except ValueError as e:
+            logger.error(f"Invalid encryption key format: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Invalid encryption key configuration",
+            )
 
         # Ensure storage directory exists
         os.makedirs(self.storage_path, exist_ok=True)
@@ -50,20 +64,45 @@ class SecureFileStorage:
         """Generate SHA-256 checksum for file integrity"""
         return hashlib.sha256(data).hexdigest()
 
+    def _pad_data(self, data: bytes) -> bytes:
+        """Pad data to be compatible with AES block size"""
+        padder = padding.PKCS7(algorithms.AES.block_size).padder()
+        return padder.update(data) + padder.finalize()
+
+    def _unpad_data(self, data: bytes) -> bytes:
+        """Unpad data after decryption"""
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        return unpadder.update(data) + unpadder.finalize()
+
     async def store_file(
         self, record_id: UUID, file_name: str, file_data: bytes
     ) -> Dict[str, Any]:
-        """Store file securely with encryption and integrity checks"""
+        """Store file securely with AES-256 encryption and integrity checks"""
         try:
             file_path = self._generate_file_path(record_id, file_name)
             checksum = self._generate_checksum(file_data)
 
-            # Encrypt file data
-            encrypted_data = self.cipher_suite.encrypt(file_data)
+            # Generate random IV (Initialization Vector)
+            iv = secrets.token_bytes(16)  # 128 bits for AES
+
+            # Create cipher and encrypt
+            cipher = Cipher(
+                algorithms.AES(self.encryption_key),
+                modes.CBC(iv),
+                backend=default_backend(),
+            )
+            encryptor = cipher.encryptor()
+
+            # Pad and encrypt data
+            padded_data = self._pad_data(file_data)
+            encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
+
+            # Prepend IV to encrypted data (IV doesn't need to be secret)
+            final_data = iv + encrypted_data
 
             # Write encrypted file
             async with aiofiles.open(file_path, "wb") as f:
-                await f.write(encrypted_data)
+                await f.write(final_data)
 
             file_size = len(file_data)
 
@@ -74,6 +113,7 @@ class SecureFileStorage:
                 "file_size": file_size,
                 "checksum": checksum,
                 "encrypted": True,
+                "algorithm": "AES-256-CBC",
             }
 
         except Exception as e:
@@ -84,7 +124,7 @@ class SecureFileStorage:
             )
 
     async def retrieve_file(self, file_path: str) -> bytes:
-        """Retrieve and decrypt file"""
+        """Retrieve and decrypt file using AES-256"""
         try:
             if not os.path.exists(file_path):
                 raise HTTPException(
@@ -93,10 +133,25 @@ class SecureFileStorage:
 
             # Read encrypted file
             async with aiofiles.open(file_path, "rb") as f:
-                encrypted_data = await f.read()
+                encrypted_data_with_iv = await f.read()
 
-            # Decrypt file data
-            decrypted_data = self.cipher_suite.decrypt(encrypted_data)
+            # Extract IV (first 16 bytes) and encrypted data
+            iv = encrypted_data_with_iv[:16]
+            encrypted_data = encrypted_data_with_iv[16:]
+
+            # Create cipher and decrypt
+            cipher = Cipher(
+                algorithms.AES(self.encryption_key),
+                modes.CBC(iv),
+                backend=default_backend(),
+            )
+            decryptor = cipher.decryptor()
+
+            # Decrypt and unpad data
+            decrypted_padded_data = (
+                decryptor.update(encrypted_data) + decryptor.finalize()
+            )
+            decrypted_data = self._unpad_data(decrypted_padded_data)
 
             return decrypted_data
 
@@ -111,7 +166,7 @@ class SecureFileStorage:
         """Securely delete file"""
         try:
             if os.path.exists(file_path):
-                # Overwrite with random data before deletion (optional)
+                # Overwrite with random data before deletion
                 file_size = os.path.getsize(file_path)
                 random_data = secrets.token_bytes(file_size)
 
@@ -314,6 +369,22 @@ class MedicalRecordService(BaseService):
         except Exception as e:
             logger.error(f"Error getting medical record stats: {e}")
             return {}
+
+    async def get_medical_record_with_relations(
+        self, db: AsyncSession, record_id: UUID
+    ) -> Optional[MedicalRecord]:
+        """Get medical record with related data (patient, creator)"""
+        try:
+            result = await db.execute(
+                select(MedicalRecord)
+                .join(Patient, MedicalRecord.patient_id == Patient.id)
+                .join(User, MedicalRecord.created_by == User.id)
+                .where(MedicalRecord.id == record_id)
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting medical record with relations: {e}")
+            return None
 
 
 medical_record_service = MedicalRecordService()
