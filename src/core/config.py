@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     DB_DOMAIN: str = Field("")
     DB_DRIVER: str = Field("postgresql+asyncpg")
 
-    SQLITE_MODE: bool = Field(False)
+    SQLITE_MODE: bool = False
 
     # Redis settings
     REQUIRE_REDIS: bool = True
@@ -103,24 +103,24 @@ class Settings(BaseSettings):
     def validate_origins(cls, v: str) -> List[str]:
         return v.split(",") if v else []
 
-    @model_validator(mode="after")
-    def check_database_config(cls, values):
-        if values.SQLITE_MODE:
-            if not values.SQLITE_DATABASE_URL.strip():
-                raise ValueError(
-                    "SQLite mode is enabled but SQLITE_DATABASE_URL is missing."
-                )
-        else:
-            missing = [
-                field
-                for field in ["DB_USER", "DB_PASSWORD", "DB_HOST", "DB_NAME"]
-                if not getattr(values, field).strip()
-            ]
-            if missing:
-                raise ValueError(
-                    f"PostgreSQL mode is enabled but the following fields are missing: {', '.join(missing)}"
-                )
-        return values
+    # @model_validator(mode="after")
+    # def check_database_config(cls, values):
+    #     if values.SQLITE_MODE:
+    #         if not values.SQLITE_DATABASE_URL.strip():
+    #             raise ValueError(
+    #                 "SQLite mode is enabled but SQLITE_DATABASE_URL is missing."
+    #             )
+    #     else:
+    #         missing = [
+    #             field
+    #             for field in ["DB_USER", "DB_PASSWORD", "DB_HOST", "DB_NAME"]
+    #             if not getattr(values, field).strip()
+    #         ]
+    #         if missing:
+    #             raise ValueError(
+    #                 f"PostgreSQL mode is enabled but the following fields are missing: {', '.join(missing)}"
+    #             )
+    #     return values
 
     class Config:
         env_file = ".env"
