@@ -117,6 +117,7 @@ async def setup_rls():
         tables_with_tenant = [
             "users",
             "refresh_tokens",
+            "tenant_settings",
             "patients",
             "services",
             "appointments",
