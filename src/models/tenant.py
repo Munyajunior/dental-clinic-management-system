@@ -74,13 +74,13 @@ class Tenant(Base):
     @classmethod
     async def create_tenant(cls, session, **kwargs):
         """Create a new tenant with proper initialization"""
-        from db.database import create_tenant_database
+        from db.database import create_tenant_config
 
         tenant = cls(**kwargs)
         session.add(tenant)
         await session.flush()  # Get the ID without committing
 
         # Initialize tenant configuration
-        await create_tenant_database(str(tenant.id))
+        await create_tenant_config(str(tenant.id))
 
         return tenant
