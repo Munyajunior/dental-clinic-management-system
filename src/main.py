@@ -221,7 +221,7 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.get("/api/v2/health")
 async def health_check():
     """Detailed health check endpoint"""
     db_healthy = await check_db_connection()
@@ -322,7 +322,7 @@ async def create_default_tenant():
             )
             existing_tenant = result.scalar_one_or_none()
 
-            if not existing_tenant and settings.CREATE_DEFAULT_TENANT:
+            if not existing_tenant and getattr(settings, "CREATE_DEFAULT_TENANT", True):
                 logger.info("Creating default tenant...")
                 default_tenant = Tenant(
                     name="Default Dental Clinic",
