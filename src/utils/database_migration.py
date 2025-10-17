@@ -94,6 +94,7 @@ async def verify_table_structure(db: AsyncSession):
             "payments": ["id", "tenant_id", "invoice_id", "amount"],
             "newsletters": ["id", "tenant_id", "subject", "content"],
             "newsletter_subscriptions": ["id", "tenant_id", "patient_id", "email"],
+            "tenant_settings": ["id", "tenant_id", "category", "settings_key"],
             "tenants": ["id", "name", "slug", "status"],
         }
 
