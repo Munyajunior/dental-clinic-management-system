@@ -1,13 +1,12 @@
 # src/services/settings_service.py
 from typing import Dict, Any, List, Optional
 from uuid import UUID
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_
 from fastapi import HTTPException, status
 
 from models.settings import TenantSettings, SettingsAudit
-from schemas.settings_schemas import (
+from schemas.settings import (
     SettingsCreate,
     SettingsUpdate,
     BulkSettingsUpdate,
