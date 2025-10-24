@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from uuid import UUID
 
 from db.database import get_db
-from schemas.settings_schemas import (
+from schemas.settings import (
     SettingsCategory,
     BulkSettingsUpdate,
     SettingsAuditResponse,
