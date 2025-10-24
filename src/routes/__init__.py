@@ -13,6 +13,7 @@ from .medical_records import router as medical_records_router
 from .prescriptions import router as prescriptions_router
 from .newsletters import router as newsletters_router
 from .dashboard import router as dashboard_router
+from .settings import router as settings_router
 
 __all__ = [
     "auth_router",
@@ -29,4 +30,5 @@ __all__ = [
     "prescriptions_router",
     "newsletters_router",
     "dashboard_router",
+    "settings_router",
 ]
