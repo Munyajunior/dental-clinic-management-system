@@ -42,6 +42,7 @@ from routes import (
     appointments_router,
     consultations_router,
     prescriptions_router,
+    settings_router,
 )
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
@@ -122,7 +123,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         # Database initialization
         logger.info("Initializing database...")
-        await initialize_database()
+        # await initialize_database()
 
         # Database check
         async with engine.connect() as conn:
@@ -130,8 +131,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Database connection verified")
 
         # Create initial tenant for development
-        if settings.ENVIRONMENT in ["development", "staging"]:
-            await create_default_tenant()
+        # if settings.ENVIRONMENT in ["development", "staging"]:
+        #     await create_default_tenant()
 
         # Redis initialization
         if settings.REQUIRE_REDIS:
@@ -207,6 +208,7 @@ app.include_router(medical_records_router, prefix=settings.API_PREFIX)
 app.include_router(prescriptions_router, prefix=settings.API_PREFIX)
 app.include_router(newsletters_router, prefix=settings.API_PREFIX)
 app.include_router(dashboard_router, prefix=settings.API_PREFIX)
+app.include_router(settings_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
@@ -235,11 +237,10 @@ async def health_check():
     }
 
 
-@app.get("/tenant/health")
+@app.get("/api/v2/tenant/health")
 async def tenant_health_check(tenant=Depends(get_current_tenant)):
     """Tenant-specific health check"""
     return {
-        "status": "healthy",
         "tenant_id": str(tenant.id),
         "tenant_name": tenant.name,
         "tenant_slug": tenant.slug,
@@ -248,7 +249,7 @@ async def tenant_health_check(tenant=Depends(get_current_tenant)):
     }
 
 
-@app.get("/startup-check")
+@app.get("/api/v2/startup-check")
 async def startup_check():
     """Verify all critical services are running"""
     checks = {
@@ -261,7 +262,7 @@ async def startup_check():
     return checks
 
 
-@app.get("/tenant-info")
+@app.get("/api/v2/tenant-info")
 async def tenant_info(tenant=Depends(get_current_tenant)):
     """Get current tenant information (requires tenant context)"""
     return {
@@ -273,7 +274,7 @@ async def tenant_info(tenant=Depends(get_current_tenant)):
     }
 
 
-@app.get("/public/tenants")
+@app.get("/api/v2/public/tenants")
 async def list_tenants():
     """Public endpoint to list available tenants (no tenant context required)"""
     from sqlalchemy import select
@@ -309,7 +310,6 @@ async def check_db_connection() -> bool:
 
 async def create_default_tenant():
     """Create default tenant for development"""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy import select
     from models.tenant import Tenant
     from db.database import AsyncSessionLocal, create_tenant_config
