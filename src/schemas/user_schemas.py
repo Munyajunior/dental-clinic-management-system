@@ -29,12 +29,27 @@ class UserCreate(UserBase):
     is_active: bool = True
     work_schedule: Optional[Dict[str, Any]] = None
 
+    # Make some fields optional for system-created users
+    contact_number: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    gender: Optional[GenderEnum] = None
+
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters long")
         return v
+
+    @field_validator("contact_number", mode="before")
+    @classmethod
+    def set_default_contact_number(cls, v: Optional[str]) -> str:
+        return v or ""
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def set_default_gender(cls, v: Optional[GenderEnum]) -> GenderEnum:
+        return v or GenderEnum.OTHER
 
 
 class UserUpdate(BaseSchema):
