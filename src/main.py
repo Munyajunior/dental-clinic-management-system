@@ -51,7 +51,7 @@ from utils.database_migration import verify_table_structure, add_missing_columns
 for log in ["watchfiles", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"]:
     logging.getLogger(log).setLevel(logging.WARNING)
 # Create separate file handler for complete logs
-file_handler = logging.FileHandler("app.log")
+file_handler = logging.FileHandler("logs/app.log")
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
