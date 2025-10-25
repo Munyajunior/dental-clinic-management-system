@@ -4,7 +4,6 @@ import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 import logging
-import watchfiles
 import uvicorn as uv
 from alembic import command
 from alembic.config import Config
@@ -13,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqlalchemy import text
 from core.cache import init_redis
 from core.config import settings
@@ -349,10 +347,12 @@ async def create_default_tenant():
 if __name__ == "__main__":
     # Configure reload directories more precisely
     watch_dirs = [
+        os.path.join(".main.py"),
         os.path.join("core"),
         os.path.join("routes"),
         os.path.join("models"),
         os.path.join("schemas"),
+        os.path.join("services"),
         os.path.join("utils"),
         os.path.join("middleware"),
         os.path.join("dependencies"),
