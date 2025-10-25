@@ -28,6 +28,7 @@ class BaseService:
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             await handle_db_exception(db, self.logger, f"get {self.model.__name__}", e)
+            return None
 
     async def get_multi(
         self,
@@ -55,6 +56,7 @@ class BaseService:
             await handle_db_exception(
                 db, self.logger, f"get_multi {self.model.__name__}", e
             )
+            return []
 
     async def create(self, db: AsyncSession, obj_in: CreateSchemaType) -> ModelType:
         """Create a new item"""
@@ -77,6 +79,7 @@ class BaseService:
             await handle_db_exception(
                 db, self.logger, f"create {self.model.__name__}", e
             )
+            return None
 
     async def update(
         self, db: AsyncSession, id: UUID, obj_in: UpdateSchemaType
@@ -103,6 +106,7 @@ class BaseService:
             await handle_db_exception(
                 db, self.logger, f"update {self.model.__name__}", e
             )
+            return None
 
     async def delete(self, db: AsyncSession, id: UUID) -> bool:
         """Delete an item"""
@@ -119,6 +123,7 @@ class BaseService:
             await handle_db_exception(
                 db, self.logger, f"delete {self.model.__name__}", e
             )
+            return False
 
     async def count(
         self, db: AsyncSession, filters: Optional[Dict[str, Any]] = None
@@ -143,3 +148,4 @@ class BaseService:
             await handle_db_exception(
                 db, self.logger, f"count {self.model.__name__}", e
             )
+            return 0
