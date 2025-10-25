@@ -43,6 +43,7 @@ from routes import (
     consultations_router,
     prescriptions_router,
     settings_router,
+    password_reset_router,
 )
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
@@ -209,6 +210,7 @@ app.include_router(prescriptions_router, prefix=settings.API_PREFIX)
 app.include_router(newsletters_router, prefix=settings.API_PREFIX)
 app.include_router(dashboard_router, prefix=settings.API_PREFIX)
 app.include_router(settings_router, prefix=settings.API_PREFIX)
+app.include_router(password_reset_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
