@@ -110,15 +110,18 @@ class TenantMiddleware(BaseHTTPMiddleware):
     async def _is_public_endpoint(self, request: Request) -> bool:
         """Check if the endpoint is public and doesn't require tenant context"""
         public_paths = [
-            "/api/v2/",
             "/api/v2/health",
             "/api/v2/docs",
             "/api/v2/redoc",
             "/api/v2/openapi.json",
-            "/api/v2/auth/",
-            "/api/v2/tenants/register",
-            "/api/v2/public/",
+            "/api/v2/auth/login",
+            "/api/v2/auth/register",
+            "/api/v2/public/tenants/register",  # Add public registration
+            "/api/v2/public/tenants",  # List available tenants
             "/api/v2/startup-check",
         ]
         path = request.url.path
-        return any(path.startswith(public_path) for public_path in public_paths)
+        return any(
+            path == public_path or path.startswith(public_path + "/")
+            for public_path in public_paths
+        )
