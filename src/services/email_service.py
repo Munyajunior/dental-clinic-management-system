@@ -1,14 +1,9 @@
 # src/services/email_service.py
 import asyncio
-import json
-import os
 from typing import Dict, Any, List, Optional, Tuple
-from uuid import UUID
-import aiofiles
 import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from fastapi import HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.email_config import email_settings
 from schemas.email_schemas import (
@@ -17,8 +12,8 @@ from schemas.email_schemas import (
     EmailAttachment,
     BulkEmailRequest,
     EmailType,
-    EmailPriority,
 )
+from utils.url_scheme_handler import URLSchemeHandler
 from utils.logger import setup_logger
 
 logger = setup_logger("EMAIL_SERVICE")
@@ -78,6 +73,14 @@ class ResendEmailService:
 
         # Template configurations
         self.template_configs = {
+            EmailType.WELCOME_TENANT: {
+                "template": "welcome_tenant",
+                "subject": "Welcome to KwantaBit Dental Clinic Management Suite - Your Default Admin Credentials",
+            },
+            EmailType.EMAIL_VERIFICATION: {
+                "template": "email_verification",
+                "subject": "Email Verification - Dental Clinic",
+            },
             EmailType.APPOINTMENT_CONFIRMATION: {
                 "template": "appointment_confirmation",
                 "subject": "Appointment Confirmation - Dental Clinic",
@@ -245,6 +248,78 @@ class ResendEmailService:
 
         return await self.send_email(email_request)
 
+    async def send_tenant_welcome_email(
+        self, user_email: str, user_name: str, temp_password: str, tenant_slug: str
+    ) -> EmailResponse:
+        """Send tenant welcome email with desktop app instructions"""
+
+        # Create deep link for one-click login
+        deep_link = URLSchemeHandler.create_deep_link("login", tenant=tenant_slug)
+
+        template_data = {
+            "user_name": user_name,
+            "user_email": user_email,
+            "temporary_password": temp_password,
+            "tenant_slug": tenant_slug,
+            "deep_link_url": deep_link,
+            "clinic_name": email_settings.FROM_NAME,
+            "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
+            "support_email": email_settings.FROM_EMAIL,
+            "setup_guide_url": email_settings.SETUP_GUIDE_URL,
+            "download_url": email_settings.DOWNLOAD_URL,
+        }
+
+        return await self.send_templated_email(
+            EmailType.WELCOME_TENANT,
+            to=[user_email],
+            template_data=template_data,
+        )
+
+    async def send_password_reset(
+        self, user_email: str, user_name: str, reset_token: str, expiry_hours: int = 24
+    ) -> EmailResponse:
+        """Send password reset email with deep link"""
+
+        # Create deep link for password reset
+        deep_link = URLSchemeHandler.create_deep_link(
+            "reset-password", token=reset_token
+        )
+
+        template_data = {
+            "user_name": user_name,
+            "reset_token": reset_token,
+            "deep_link_url": deep_link,
+            "expiry_hours": expiry_hours,
+            "clinic_name": email_settings.FROM_NAME,
+        }
+
+        return await self.send_templated_email(
+            EmailType.PASSWORD_RESET, to=[user_email], template_data=template_data
+        )
+
+    async def send_email_verification(
+        self, user_email: str, user_name: str, verification_token: str
+    ) -> EmailResponse:
+        """Send email verification with deep link"""
+        from utils.url_scheme_handler import URLSchemeHandler
+
+        deep_link = URLSchemeHandler.create_deep_link(
+            "verify-email", token=verification_token
+        )
+
+        template_data = {
+            "user_name": user_name,
+            "verification_token": verification_token,
+            "deep_link_url": deep_link,
+            "clinic_name": email_settings.FROM_NAME,
+        }
+
+        return await self.send_templated_email(
+            EmailType.EMAIL_VERIFICATION,
+            to=[user_email],
+            template_data=template_data,
+        )
+
     async def send_appointment_confirmation(
         self,
         patient_email: str,
@@ -312,21 +387,6 @@ class ResendEmailService:
 
         return await self.send_templated_email(
             EmailType.WELCOME_PATIENT, to=[patient_email], template_data=template_data
-        )
-
-    async def send_password_reset(
-        self, user_email: str, user_name: str, reset_token: str, expiry_hours: int = 24
-    ) -> EmailResponse:
-        """Send password reset email"""
-        template_data = {
-            "user_name": user_name,
-            "reset_token": reset_token,
-            "expiry_hours": expiry_hours,
-            "clinic_name": email_settings.FROM_NAME,
-        }
-
-        return await self.send_templated_email(
-            EmailType.PASSWORD_RESET, to=[user_email], template_data=template_data
         )
 
     async def send_invoice(
