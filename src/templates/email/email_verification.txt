@@ -1,0 +1,60 @@
+<!-- src/templates/email/email_verification.txt -->
+Verify Your Email Address - KwantaBit Dental Clinic
+===================================================
+
+Dear {{ user_name }},
+
+Thank you for choosing KwantaBit Dental Clinic Management! To ensure the security of your account and enable full access to all features, please verify your email address.
+
+EMAIL VERIFICATION REQUIRED [SECURITY]
+=======================================
+
+Click the link below to verify your email address and activate your account:
+
+{{ deep_link_url }}
+
+Or use this verification code in the application: {{ verification_token }}
+
+SECURITY NOTICE: This verification link will expire in {{ expiry_hours }} hours for your protection. If you didn't request this verification, please ignore this email and contact our security team immediately.
+
+WHY VERIFY YOUR EMAIL?
+======================
+
+• Enhanced Security: Protect your account from unauthorized access
+• Full Access: Unlock all clinic management features
+• Important Notifications: Receive critical clinic alerts and updates
+• Communication: Stay connected with patients and staff
+
+HAVING TROUBLE?
+===============
+
+If the verification link doesn't work:
+1. Copy the verification code: {{ verification_token }}
+2. Open the Dental Clinic Management application
+3. Navigate to Settings → Account → Verify Email
+4. Paste the verification code when prompted
+
+NEED HELP?
+==========
+
+• Email Support: {{ support_email }}
+• Setup Guide: https://docs.kwantabit.com/verification-help
+• Video Tutorial: https://kwantabit.com/tutorials/email-verification
+
+Thank you for helping us maintain a secure environment for your dental clinic management needs.
+
+Best regards,
+The KwantaBit Technologies Security Team
+
+---
+KwantaBit Technologies Inc.
+Enterprise Healthcare Solutions
+
+© 2025 KwantaBit Technologies. All rights reserved.
+This email was sent to {{ user_email }} as part of our account security process.
+
+Privacy Policy: https://kwantabit.com/privacy
+Terms of Service: https://kwantabit.com/terms
+Security Information: https://kwantabit.com/security
+
+If you believe you received this email in error or have security concerns, please contact us immediately at security@kwantabit.com

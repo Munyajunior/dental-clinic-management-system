@@ -1,0 +1,164 @@
+<!-- src/templates/email/security_alert.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Updated - Security Alert</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
+            line-height: 1.6; 
+            color: #1f2937; 
+            margin: 0; 
+            padding: 0; 
+            background: #f8fafc;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: #ffffff; 
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .header { 
+            background: linear-gradient(135deg, #059669, #047857, #065f46);
+            color: white; 
+            padding: 30px; 
+            text-align: center; 
+        }
+        .content { 
+            padding: 40px; 
+            background: #ffffff; 
+        }
+        .confirmation-box { 
+            background: #f0fdf4; 
+            border: 2px solid #10b981; 
+            border-radius: 12px; 
+            padding: 25px; 
+            margin: 25px 0; 
+            text-align: center;
+        }
+        .footer { 
+            text-align: center; 
+            padding: 30px; 
+            color: #6b7280; 
+            font-size: 14px; 
+            background: #f8fafc;
+            border-top: 1px solid #e5e7eb;
+        }
+        .security-note { 
+            background: #fef3c7; 
+            border-left: 4px solid #f59e0b; 
+            padding: 16px; 
+            margin: 20px 0; 
+            border-radius: 6px;
+        }
+        .info-box {
+            background: #eff6ff;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .step { 
+            background: #f8fafc; 
+            padding: 20px; 
+            margin: 15px 0; 
+            border-radius: 8px; 
+            border-left: 4px solid #10b981; 
+        }
+        .checkmark {
+            color: #10b981;
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        @media (max-width: 600px) {
+            .content {
+                padding: 25px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 700;">Password Successfully Updated</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Security confirmation</p>
+        </div>
+        
+        <div class="content">
+            <p>Dear <strong>{{ user_name }}</strong>,</p>
+            
+            <p>This is a security confirmation that your password for the Dental Clinic Management System has been successfully updated.</p>
+            
+            <div class="confirmation-box">
+                <div class="checkmark">✅</div>
+                <h3 style="margin: 0 0 10px 0; color: #065f46;">Password Updated Successfully</h3>
+                <p style="margin: 0; color: #065f46; font-weight: 600;">Your account security has been enhanced</p>
+            </div>
+            
+            <div class="info-box">
+                <h4 style="margin: 0 0 10px 0; color: #1e40af;">📋 Action Details</h4>
+                <p style="margin: 0;"><strong>Action:</strong> Password Reset & Update</p>
+                <p style="margin: 8px 0 0 0;"><strong>Status:</strong> Completed Successfully</p>
+                <p style="margin: 8px 0 0 0;"><strong>Time:</strong> {{ timestamp }}</p>
+            </div>
+
+            <h3 style="color: #065f46; border-bottom: 2px solid #10b981; padding-bottom: 8px;">What to Do Next</h3>
+            
+            <div class="step">
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">1. Verify Access</h4>
+                <p style="margin: 0;">Log into the application with your new password to confirm everything is working correctly.</p>
+            </div>
+            
+            <div class="step">
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">2. Check Recent Activity</h4>
+                <p style="margin: 0;">Review your recent login activity in the application settings to ensure all access is legitimate.</p>
+            </div>
+            
+            <div class="step">
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">3. Update Other Devices</h4>
+                <p style="margin: 0;">If you use the application on multiple devices, update your password on all of them.</p>
+            </div>
+
+            <div class="security-note">
+                <strong>🔒 Security Alert:</strong> If you did NOT initiate this password change, please contact our security team immediately. Your account may have been compromised.
+            </div>
+            
+            <p><strong>Enhanced Security Features Available</strong></p>
+            <ul>
+                <li><strong>Two-Factor Authentication:</strong> Add an extra layer of security to your account</li>
+                <li><strong>Login Notifications:</strong> Get alerts for new device logins</li>
+                <li><strong>Session Management:</strong> View and manage active sessions</li>
+                <li><strong>Security Audit Log:</strong> Monitor all account activity</li>
+            </ul>
+            
+            <p><strong>Need Assistance?</strong></p>
+            <p>If you have any questions or security concerns, our support team is here to help:</p>
+            <ul>
+                <li>📧 <strong>General Support:</strong> <a href="mailto:{{ support_email }}">{{ support_email }}</a></li>
+                <li>🔒 <strong>Security Team:</strong> <a href="mailto:security@kwantabit.com">security@kwantabit.com</a></li>
+                <li>📞 <strong>Emergency:</strong> {{ whatsapp_support }} (WhatsApp)</li>
+            </ul>
+            
+            <p>Thank you for helping us keep your account secure,<br>
+            <strong>The KwantaBit Technologies Security Team</strong></p>
+        </div>
+        
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>KwantaBit Technologies Inc.</strong><br>
+                Protecting Your Digital Practice
+            </p>
+            <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+                © 2025 KwantaBit Technologies. All rights reserved.<br>
+                This is an automated security notification. Please do not reply to this email.<br>
+                <a href="https://kwantabit.com/security" style="color: #6b7280;">Security Center</a> • 
+                <a href="https://kwantabit.com/privacy" style="color: #6b7280;">Privacy Policy</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
