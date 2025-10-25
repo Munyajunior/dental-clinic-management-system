@@ -14,6 +14,7 @@ from .prescriptions import router as prescriptions_router
 from .newsletters import router as newsletters_router
 from .dashboard import router as dashboard_router
 from .settings import router as settings_router
+from .public import router as public_router
 
 __all__ = [
     "auth_router",
@@ -31,4 +32,5 @@ __all__ = [
     "newsletters_router",
     "dashboard_router",
     "settings_router",
+    "public_router",
 ]
