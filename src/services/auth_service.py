@@ -11,10 +11,14 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from core.config import settings
 from models.user import User
+from models.tenant import Tenant
 from models.auth import RefreshToken
 from schemas.user_schemas import UserLogin, UserCreate
+from services.email_service import email_service
 from utils.logger import setup_logger
 from .base_service import BaseService
+import secrets
+import string
 
 logger = setup_logger("AUTH_SERVICE")
 
@@ -31,6 +35,69 @@ class AuthService:
 
     def get_password_hash(self, password: str) -> str:
         return pwd_context.hash(password)
+
+    def generate_pronounceable_password(self, length: int = 10) -> str:
+        """
+        Generate a more user-friendly but still secure password
+        """
+        vowels = "aeiou"
+        consonants = "bcdfghjklmnpqrstvwxyz"
+
+        password = []
+        for i in range(length):
+            if i % 2 == 0:
+                password.append(secrets.choice(consonants))
+            else:
+                password.append(secrets.choice(vowels))
+
+        # Add a digit and special character
+        password.append(secrets.choice(string.digits))
+        password.append(secrets.choice("!@#$%"))
+
+        secrets.SystemRandom().shuffle(password)
+        return "".join(password)
+
+    def calculate_password_entropy(self, password: str) -> float:
+        """
+        Calculate password entropy in bits
+        """
+        import math
+
+        # Character pool size
+        pool_size = 0
+        if any(c.islower() for c in password):
+            pool_size += 26
+        if any(c.isupper() for c in password):
+            pool_size += 26
+        if any(c.isdigit() for c in password):
+            pool_size += 10
+        if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+            pool_size += 20
+
+        if pool_size == 0:
+            return 0
+
+        entropy = len(password) * math.log2(pool_size)
+        return entropy
+
+    def is_password_compromised(self, password: str) -> bool:
+        """
+        Basic check for common compromised passwords
+        """
+        common_passwords = {
+            "password",
+            "123456",
+            "password123",
+            "admin",
+            "qwerty",
+            "letmein",
+            "welcome",
+            "monkey",
+            "dragon",
+            "master",
+        }
+
+        return password.lower() in common_passwords
 
     def create_access_token(
         self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None
@@ -188,6 +255,50 @@ class AuthService:
             "token_type": "bearer",
             "user": user,
         }
+
+    async def create_tenant_admin_user(
+        self, db: AsyncSession, tenant: Tenant, email: str
+    ) -> User:
+        """Create default admin user for new tenant"""
+        from schemas.user_schemas import UserCreate
+        from models.user import StaffRole, GenderEnum
+
+        # Generate temporary password
+        temp_password = self.generate_pronounceable_password()
+
+        try:
+            # Create UserCreate instance with all required fields
+            user_data = UserCreate(
+                email=email,
+                password=temp_password,
+                first_name="Clinic",
+                last_name="Admin",
+                contact_number="",  # Required but can be empty
+                gender=GenderEnum.OTHER,
+                role=StaffRole.ADMIN,
+                specialization=None,
+                license_number=None,
+                employee_id=None,
+                is_active=True,
+            )
+
+            user = await self.create_user(db, user_data)
+
+            logger.info(f"Created tenant admin user: {email} for tenant: {tenant.name}")
+
+            # Send welcome email with setup instructions
+            await email_service.send_tenant_welcome_email(
+                user_email=user.email,
+                user_name=f"{user.first_name} {user.last_name}",
+                temp_password=temp_password,
+                tenant_slug=tenant.slug,
+            )
+
+            return user
+
+        except Exception as e:
+            logger.error(f"Failed to create tenant admin user: {e}")
+            raise
 
     async def refresh_tokens(
         self, db: AsyncSession, refresh_token: str
