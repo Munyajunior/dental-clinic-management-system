@@ -81,7 +81,9 @@ class User(Base):
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
-
+    password_reset_tokens = relationship(
+        "PasswordResetToken", back_populates="user", cascade="all, delete-orphan"
+    )
     # As treating dentist
     appointments = relationship(
         "Appointment", back_populates="dentist", foreign_keys="[Appointment.dentist_id]"
