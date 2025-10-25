@@ -10,8 +10,14 @@ class EmailSettings(BaseSettings):
     """Email configuration settings"""
 
     RESEND_API_KEY: str
-    FROM_EMAIL: EmailStr = "noreply@your-dental-clinic.com"
+    FROM_EMAIL: EmailStr = "noreply@kwantabit.com"
     FROM_NAME: str = "Dental Clinic Management System"
+    SUPPORT_EMAIL: EmailStr = "support@kwantabit.com"
+    SETUP_GUIDE_URL: str = (
+        "https://docs.kwantabit.com/dental-clinic-management-system/getting-started"
+    )
+    WHATSAPP_SUPPORT: str = "+237 690908721"
+    DOWNLOAD_URL: str = "https://kwantabit.com/download"
 
     # Template settings
     TEMPLATE_DIR: str = "src/templates/email"
