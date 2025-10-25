@@ -1,11 +1,13 @@
 # src/services/tenant_service.py
-from typing import List, Optional, Dict, Any
+from typing import Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timedelta
 from sqlalchemy import select, func
 from fastapi import HTTPException, status
-from models.tenant import Tenant
+from models.tenant import Tenant, TenantTier, TenantStatus
 from schemas.tenant_schemas import TenantCreate, TenantUpdate, TenantStats
+from services.auth_service import auth_service
 from utils.logger import setup_logger
 from .base_service import BaseService
 
@@ -48,6 +50,40 @@ class TenantService(BaseService):
 
         logger.info(f"Created new tenant: {tenant.name} ({tenant.slug})")
         return tenant
+
+    async def create_tenant_with_admin(
+        self, db: AsyncSession, tenant_data: TenantCreate
+    ) -> Tenant:
+        """Create tenant with admin user and send welcome email"""
+        try:
+            # Check if slug already exists
+            existing_tenant = await self.get_by_slug(db, tenant_data.slug)
+            if existing_tenant:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Tenant with this slug already exists",
+                )
+
+            # Create tenant
+            tenant = Tenant(**tenant_data.dict())
+            db.add(tenant)
+            await db.commit()
+            await db.refresh(tenant)
+
+            # Create admin user for the tenant
+            admin_user = await auth_service.create_tenant_admin_user(
+                db, tenant, tenant_data.contact_email
+            )
+
+            logger.info(
+                f"Created tenant {tenant.name} with admin user {admin_user.email}"
+            )
+            return tenant
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to create tenant with admin: {e}")
+            raise
 
     async def get_tenant_stats(self, db: AsyncSession, tenant_id: UUID) -> TenantStats:
         """Get tenant statistics"""
