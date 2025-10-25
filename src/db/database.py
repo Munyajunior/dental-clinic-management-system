@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from typing import Optional
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import text, event
+from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 from utils.logger import setup_logger
 
@@ -117,7 +117,9 @@ async def setup_rls():
         tables_with_tenant = [
             "users",
             "refresh_tokens",
+            "password_reset_tokens",
             "tenant_settings",
+            "settings_audit",
             "patients",
             "services",
             "appointments",
