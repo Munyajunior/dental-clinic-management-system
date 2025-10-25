@@ -15,6 +15,7 @@ from .newsletters import router as newsletters_router
 from .dashboard import router as dashboard_router
 from .settings import router as settings_router
 from .public import router as public_router
+from .password_reset import router as password_reset_router
 
 __all__ = [
     "auth_router",
@@ -33,4 +34,5 @@ __all__ = [
     "dashboard_router",
     "settings_router",
     "public_router",
+    "password_reset_router",
 ]

@@ -13,6 +13,18 @@ logger = setup_logger("PUBLIC ROUTES")
 router = APIRouter(prefix="/public", tags=["public"])
 
 
+@router.get(
+    "/tenants",
+    response_model=list[TenantPublic],
+    summary="List public clinics",
+    description="Public endpoint to list available clinics (no tenant context required)",
+)
+async def list_public_tenants(db: AsyncSession = Depends(get_db_session)):
+    """Public endpoint to list available clinics (no tenant context required)"""
+    tenants = await tenant_service.get_multi(db, skip=0, limit=100)
+    return [TenantPublic.from_orm(tenant) for tenant in tenants]
+
+
 @router.post(
     "/tenants/register",
     response_model=TenantPublic,
