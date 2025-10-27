@@ -29,7 +29,6 @@ class UserCreate(UserBase):
     is_active: bool = True
     work_schedule: Optional[Dict[str, Any]] = None
 
-    # Make some fields optional for system-created users
     contact_number: Optional[str] = None
     date_of_birth: Optional[date] = None
     gender: Optional[GenderEnum] = None
@@ -44,7 +43,7 @@ class UserCreate(UserBase):
     @field_validator("contact_number", mode="before")
     @classmethod
     def set_default_contact_number(cls, v: Optional[str]) -> str:
-        return v or ""
+        return v or ""  # Ensure empty string instead of None
 
     @field_validator("gender", mode="before")
     @classmethod
@@ -104,6 +103,13 @@ class UserLogin(BaseSchema):
     email: EmailStr
     password: str
     tenant_slug: Optional[str] = None
+
+    @field_validator("tenant_slug")
+    @classmethod
+    def validate_tenant_slug(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Tenant slug cannot be empty")
+        return v
 
 
 class UserLoginResponse(BaseSchema):
