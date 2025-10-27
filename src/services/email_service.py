@@ -4,6 +4,8 @@ from typing import Dict, Any, List, Optional, Tuple
 import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from fastapi import HTTPException, status
+import os
+from pathlib import Path
 
 from core.email_config import email_settings
 from schemas.email_schemas import (
@@ -23,7 +25,18 @@ class EmailTemplateManager:
     """Manages email templates with Jinja2"""
 
     def __init__(self):
-        self.template_dir = email_settings.TEMPLATE_DIR
+        # Get the project root directory
+        project_root = Path(__file__).parent.parent.parent
+        self.template_dir = str(project_root / "src" / "templates" / "email")
+
+        # Ensure template directory exists
+        if not os.path.exists(self.template_dir):
+            logger.warning(f"Template directory not found: {self.template_dir}")
+            # Create fallback directory
+            os.makedirs(self.template_dir, exist_ok=True)
+
+        logger.info(f"Loading email templates from: {self.template_dir}")
+
         self.env = Environment(
             loader=FileSystemLoader(self.template_dir),
             autoescape=select_autoescape(["html", "xml"]),
@@ -31,20 +44,44 @@ class EmailTemplateManager:
             lstrip_blocks=True,
         )
 
+        # Log available templates
+        available_templates = self.env.list_templates()
+        logger.info(f"Available email templates: {available_templates}")
+
+    def template_exists(self, template_name: str) -> bool:
+        """Check if a template exists"""
+        try:
+            # Correct way to check if template exists
+            template_path = f"{template_name}.html"
+            return self.env.loader.get_source(self.env, template_path) is not None
+        except Exception:
+            return False
+
     def render_template(
         self, template_name: str, context: Dict[str, Any]
     ) -> Tuple[str, str]:
         """Render HTML and text templates"""
         try:
+            # Check if template exists using our corrected method
+            template_path = f"{template_name}.html"
+            if not self.template_exists(template_name):
+                logger.error(f"Template not found: {template_path}")
+                logger.error(f"Available templates: {self.env.list_templates()}")
+                raise FileNotFoundError(
+                    f"Template '{template_path}' not found in {self.template_dir}"
+                )
+
             # Render HTML template
-            html_template = self.env.get_template(f"{template_name}.html")
+            html_template = self.env.get_template(template_path)
             html_content = html_template.render(**context)
 
             # Try to render text template, fallback to HTML without tags
+            text_template_path = f"{template_name}.txt"
+            text_content = ""
             try:
-                text_template = self.env.get_template(f"{template_name}.txt")
+                text_template = self.env.get_template(text_template_path)
                 text_content = text_template.render(**context)
-            except:
+            except Exception:
                 # Simple fallback: remove HTML tags and clean up
                 import re
 
@@ -53,6 +90,12 @@ class EmailTemplateManager:
 
             return html_content, text_content
 
+        except FileNotFoundError as e:
+            logger.error(f"Template file not found: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Email template not found: {str(e)}",
+            )
         except Exception as e:
             logger.error(f"Template rendering error for {template_name}: {e}")
             raise HTTPException(
@@ -126,6 +169,40 @@ class ResendEmailService:
                 "subject": "Security Alert - Dental Clinic",
             },
         }
+
+        self._validate_templates()
+
+    def _validate_templates(self) -> Dict[str, bool]:
+        """Validate that all required templates exist"""
+        try:
+            validation_results = {}
+
+            for email_type, config in self.template_configs.items():
+                template_name = config["template"]
+                html_exists = self.template_manager.template_exists(template_name)
+                validation_results[email_type.value] = html_exists
+
+                if not html_exists:
+                    logger.warning(
+                        f"Missing template for {email_type}: {template_name}.html"
+                    )
+                else:
+                    logger.info(
+                        f"✓ Template found: {template_name}.html for {email_type}"
+                    )
+
+            # Log summary
+            total_templates = len(validation_results)
+            found_templates = sum(validation_results.values())
+            logger.info(
+                f"Template validation: {found_templates}/{total_templates} templates found"
+            )
+
+            return validation_results
+
+        except Exception as e:
+            logger.error(f"Template validation failed: {e}")
+            return {}
 
     async def send_email(self, email_request: EmailRequest) -> EmailResponse:
         """Send a single email using Resend"""
