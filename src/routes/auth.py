@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any
-from db.database import get_db
+from db.database import get_db, get_db_session
 from schemas.user_schemas import (
     UserLogin,
     UserLoginResponse,
@@ -28,16 +28,20 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 )
 @limiter.limit("5/minute")
 async def login(
-    request: Request, login_data: UserLogin, db: AsyncSession = Depends(get_db)
+    request: Request, login_data: UserLogin, db: AsyncSession = Depends(get_db_session)
 ) -> Any:
-    """User login endpoint"""
-    result = await auth_service.login(db, login_data)
-    return {
-        "access_token": result["access_token"],
-        "refresh_token": result["refresh_token"],
-        "token_type": "bearer",
-        "user": UserPublic.from_orm(result["user"]),
-    }
+    """User login endpoint - uses system session to find user across tenants"""
+    try:
+        result = await auth_service.login(db, login_data)
+        return {
+            "access_token": result["access_token"],
+            "refresh_token": result["refresh_token"],
+            "token_type": "bearer",
+            "user": UserPublic.from_orm(result["user"]),
+        }
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise
 
 
 @router.post(
@@ -47,7 +51,8 @@ async def login(
     description="Refresh access token using refresh token. Implements token rotation for security.",
 )
 async def refresh_tokens(
-    refresh_data: RefreshTokenRequest = Body(...), db: AsyncSession = Depends(get_db)
+    refresh_data: RefreshTokenRequest = Body(...),
+    db: AsyncSession = Depends(get_db_session),
 ) -> Any:
     """Refresh tokens endpoint with secure token rotation"""
     try:
@@ -63,6 +68,24 @@ async def refresh_tokens(
 
 
 @router.post(
+    "/register",
+    response_model=UserPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register new user",
+    description="Create a new user account within current tenant",
+)
+@limiter.limit("10/minute")
+async def register(
+    request: Request,
+    user_data: UserCreate,
+    db: AsyncSession = Depends(get_db),  # TENANT session - requires tenant context
+) -> Any:
+    """User registration endpoint - creates user within current tenant"""
+    user = await auth_service.create_user(db, user_data)
+    return UserPublic.from_orm(user)
+
+
+@router.post(
     "/logout",
     response_model=LogoutResponse,
     summary="User logout",
@@ -70,7 +93,7 @@ async def refresh_tokens(
 )
 async def logout(
     logout_data: LogoutRequest = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),  # TENANT session
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> LogoutResponse:
     """User logout endpoint"""
@@ -85,28 +108,12 @@ async def logout(
     description="Logout user from all devices by revoking all refresh tokens",
 )
 async def logout_all(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),  # TENANT session
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> LogoutResponse:
     """Logout from all devices endpoint"""
     await auth_service.logout_all(db, current_user.id)
     return LogoutResponse(message="Successfully logged out from all devices")
-
-
-@router.post(
-    "/register",
-    response_model=UserPublic,
-    status_code=status.HTTP_201_CREATED,
-    summary="Register new user",
-    description="Create a new user account",
-)
-@limiter.limit("10/minute")
-async def register(
-    request: Request, user_data: UserCreate, db: AsyncSession = Depends(get_db)
-) -> Any:
-    """User registration endpoint"""
-    user = await auth_service.create_user(db, user_data)
-    return UserPublic.from_orm(user)
 
 
 @router.get(
@@ -116,7 +123,9 @@ async def register(
     description="Get current authenticated user information",
 )
 async def get_current_user(
-    current_user: Any = Depends(auth_service.get_current_user),
+    current_user: Any = Depends(
+        auth_service.get_current_user
+    ),  # Uses get_db internally
 ) -> Any:
-    """Get current user endpoint"""
+    """Get current user endpoint - requires tenant context"""
     return UserPublic.from_orm(current_user)
