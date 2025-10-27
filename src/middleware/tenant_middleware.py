@@ -66,7 +66,18 @@ class TenantMiddleware(BaseHTTPMiddleware):
         if tenant_slug:
             return tenant_slug
 
-        # 3. Check subdomain (e.g., tenant1.dentalapp.com)
+        # 3. For login requests, check the request body for tenant_slug
+        if request.url.path.endswith("/auth/login") and request.method == "POST":
+            try:
+                # Read the request body to extract tenant_slug
+                body = await request.json()
+                tenant_slug = body.get("tenant_slug")
+                if tenant_slug:
+                    return tenant_slug
+            except:
+                pass
+
+        # 4. Check subdomain (e.g., tenant1.dentalapp.com)
         host = request.headers.get("host", "")
         if "." in host:
             subdomain = host.split(".")[0]
@@ -111,14 +122,15 @@ class TenantMiddleware(BaseHTTPMiddleware):
         """Check if the endpoint is public and doesn't require tenant context"""
         public_paths = [
             "/api/v2/health",
-            "/api/v2/docs",
-            "/api/v2/redoc",
-            "/api/v2/openapi.json",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
             "/api/v2/auth/login",
-            "/api/v2/auth/register",
-            "/api/v2/public/tenants/register",  # Add public registration
-            "/api/v2/public/tenants",  # List available tenants
+            "/api/v2/auth/refresh",
+            "/api/v2/public/tenants/register",
+            "/api/v2/public/tenants",
             "/api/v2/startup-check",
+            "/api/v2/password-reset",
         ]
         path = request.url.path
         return any(
