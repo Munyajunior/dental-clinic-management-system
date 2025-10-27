@@ -1,0 +1,60 @@
+<!-- src/templates/email/welcome_tenant.txt -->
+Welcome to KwantaBit Dental Clinic Management Suite
+
+Dear {{ user_name }},
+
+Welcome to KwantaBit Dental Clinic Management Suite! We're thrilled to partner with you in transforming your dental practice with enterprise-grade technology.
+
+YOUR ADMIN CREDENTIALS
+======================
+Email: {{ user_email }}
+Temporary Password: {{ temporary_password }}
+Clinic: {{ tenant_slug }}
+
+QUICK START
+===========
+1. Launch the Dental Clinic Application
+2. Your clinic ({{ tenant_slug }}) will be pre-filled
+3. Enter your credentials above
+4. Change your password on first login
+
+SECURITY NOTE: This is a temporary password. You'll be required to change it on first login for enhanced security.
+
+GETTING STARTED GUIDE
+=====================
+1. Launch Application - Open "KwantaBit Dental Management"
+2. First-Time Setup - Your clinic ({{ tenant_slug }}) is pre-configured
+3. Security Setup - Change password and enable 2FA
+4. Configure Your Clinic - Add services, staff, and settings
+
+ENTERPRISE FEATURES
+===================
+• Smart Scheduling with AI-powered conflict detection
+• Comprehensive Patient Management with medical history
+• Automated Billing & Insurance claim processing
+• Real-time Analytics Dashboard and reporting
+• HIPAA Compliant security features
+• Multi-Device Synchronization
+
+NEED ENTERPRISE SUPPORT?
+========================
+• WhatsApp Support: {{ whatsapp_support }}
+• Email: {{ support_email }}
+• Setup Guide: {{ setup_guide_url }}
+• Video Tutorials: https://kwantabit.com/tutorials
+
+We're committed to your success and look forward to helping you optimize your clinic operations!
+
+Best regards,
+The KwantaBit Technologies Enterprise Team
+
+---
+KwantaBit Technologies Inc.
+Enterprise Software Solutions
+
+© 2025 KwantaBit Technologies. All rights reserved.
+Privacy: https://kwantabit.com/privacy
+Terms: https://kwantabit.com/terms
+Security: https://kwantabit.com/security
+
+If you received this email in error, contact security@kwantabit.com
