@@ -2,11 +2,14 @@
 from typing import Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
 from sqlalchemy import select, func
 from fastapi import HTTPException, status
 from models.tenant import Tenant, TenantTier, TenantStatus
 from schemas.tenant_schemas import TenantCreate, TenantUpdate, TenantStats
+from models.user import User
+from models.patient import Patient
+from models.appointment import Appointment
+from models.invoice import Invoice
 from services.auth_service import auth_service
 from utils.logger import setup_logger
 from .base_service import BaseService
@@ -65,15 +68,20 @@ class TenantService(BaseService):
                 )
 
             # Create tenant
-            tenant = Tenant(**tenant_data.dict())
+            tenant = Tenant(**tenant_data.model_dump())
             db.add(tenant)
-            await db.commit()
-            await db.refresh(tenant)
+            await db.flush()  # Get tenant ID without committing
 
-            # Create admin user for the tenant
+            logger.info(f"Creating tenant: {tenant.name} with ID: {tenant.id}")
+
+            # Create admin user for the tenant WITH the tenant_id
             admin_user = await auth_service.create_tenant_admin_user(
                 db, tenant, tenant_data.contact_email
             )
+
+            # Now commit both tenant and user
+            await db.commit()
+            await db.refresh(tenant)
 
             logger.info(
                 f"Created tenant {tenant.name} with admin user {admin_user.email}"
@@ -83,15 +91,13 @@ class TenantService(BaseService):
         except Exception as e:
             await db.rollback()
             logger.error(f"Failed to create tenant with admin: {e}")
-            raise
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create clinic account. Please try again or contact support.",
+            )
 
     async def get_tenant_stats(self, db: AsyncSession, tenant_id: UUID) -> TenantStats:
         """Get tenant statistics"""
-        from models.user import User
-        from models.patient import Patient
-        from models.appointment import Appointment
-        from models.invoice import Invoice
-
         try:
             # Get counts
             users_count = await db.execute(
