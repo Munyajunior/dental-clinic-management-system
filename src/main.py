@@ -42,6 +42,7 @@ from routes import (
     prescriptions_router,
     settings_router,
     password_reset_router,
+    public_router,
 )
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
@@ -51,7 +52,7 @@ from utils.database_migration import verify_table_structure, add_missing_columns
 for log in ["watchfiles", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"]:
     logging.getLogger(log).setLevel(logging.WARNING)
 # Create separate file handler for complete logs
-file_handler = logging.FileHandler("logs/app.log")
+file_handler = logging.FileHandler("app.log")
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
@@ -97,12 +98,19 @@ async def initialize_database():
         await create_tables()
         logger.info("Database tables created")
 
-        # Verify table structure
+        # Verify table structure with proper session management
         async with AsyncSessionLocal() as session:
-            structure_ok = await verify_table_structure(session)
-            if not structure_ok:
-                logger.warning("Table structure issues detected, running migration...")
-                await add_missing_columns(session)
+            try:
+                structure_ok = await verify_table_structure(session)
+                if not structure_ok:
+                    logger.warning(
+                        "Table structure issues detected, running migration..."
+                    )
+                    await add_missing_columns(session)
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                raise
 
         # Setup RLS after tables are created
         logger.info("Setting up Row-Level Security policies...")
@@ -112,6 +120,17 @@ async def initialize_database():
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
+
+
+async def check_db_connection() -> bool:
+    """Check database connection health with proper cleanup"""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        logger.error(f"Database connection check failed: {e}")
+        return False
 
 
 @asynccontextmanager
@@ -125,9 +144,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # await initialize_database()
 
         # Database check
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-        logger.info("Database connection verified")
+        await check_db_connection()
+        if check_db_connection:
+            logger.info("Database connection verified")
 
         # Create initial tenant for development
         # if settings.ENVIRONMENT in ["development", "staging"]:
@@ -157,8 +176,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error(f"Startup failed: {str(e)}")
         raise
     finally:
-        logger.info("Shutting down application...")
+        # Close db connection
+        logger.info("Closing database connection")
         await disconnect_db()
+        logger.info("Shutting down application...")
 
 
 # Initialize the FastAPI application with lifespan management
@@ -209,6 +230,7 @@ app.include_router(newsletters_router, prefix=settings.API_PREFIX)
 app.include_router(dashboard_router, prefix=settings.API_PREFIX)
 app.include_router(settings_router, prefix=settings.API_PREFIX)
 app.include_router(password_reset_router, prefix=settings.API_PREFIX)
+app.include_router(public_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
@@ -295,17 +317,6 @@ async def list_tenants():
                 for tenant in tenants
             ]
         }
-
-
-async def check_db_connection() -> bool:
-    """Check database connection health"""
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception as e:
-        logger.error(f"Database connection check failed: {e}")
-        return False
 
 
 async def create_default_tenant():
