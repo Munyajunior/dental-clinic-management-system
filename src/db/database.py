@@ -1,6 +1,7 @@
 # src/db/database.py
 from core.config import settings
 from typing import AsyncGenerator, Dict, Any
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Optional
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -56,6 +57,7 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False,
+    future=True,
 )
 
 # Base class for models
@@ -85,9 +87,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-async def get_db_session() -> AsyncSession:
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get a database session without tenant context (for system operations)"""
-    return AsyncSessionLocal()
+    session = AsyncSessionLocal()
+    try:
+        yield session
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        logger.error(f"Database session error: {exc}")
+        raise
+    finally:
+        await session.close()  # Ensure session is always closed
 
 
 async def setup_rls():
