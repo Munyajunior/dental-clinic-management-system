@@ -32,7 +32,7 @@ async def list_public_tenants(db: AsyncSession = Depends(get_db_session)):
     summary="Register new clinic",
     description="Public endpoint for clinics to create their account",
 )
-@limiter.limit("3/hour")  # Prevent spam
+@limiter.limit("10/hour")  # Prevent spam
 async def register_tenant(
     request: Request,
     tenant_data: TenantCreate,
