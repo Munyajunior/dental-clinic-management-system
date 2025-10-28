@@ -875,11 +875,17 @@ class AuthService:
             if not user:
                 return
 
-            # Clear reset flags
-            if "force_password_reset" in user.settings:
-                user.settings["force_password_reset"] = False
-            if "password_reset_required" in user.settings:
-                user.settings["password_reset_required"] = False
+            # Clear all reset flags
+            reset_flags = [
+                "force_password_reset",
+                "password_reset_required",
+                "temporary_password",
+                "require_reauthentication",
+            ]
+
+            for flag in reset_flags:
+                if flag in user.settings:
+                    user.settings[flag] = False
 
             # Update last login if it's the first time
             if user.last_login_at is None:
@@ -923,6 +929,15 @@ class AuthService:
                     detail="; ".join(validation_errors),
                 )
 
+            tenant = None
+            if login_data.tenant_slug:
+                tenant = await self._get_tenant_by_slug(db, login_data.tenant_slug)
+                if not tenant:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Clinic not found. Please check the clinic name.",
+                    )
+
             # Tenant validation
             tenant = await self._validate_tenant_for_login(db, login_data.tenant_slug)
 
@@ -930,6 +945,14 @@ class AuthService:
             user = await self._authenticate_user_for_login(
                 db, login_data.email, login_data.password, tenant
             )
+
+            # Check if password reset is required BEFORE other security checks
+            if self._should_force_password_reset(user):
+                logger.info(f"Password reset required for user: {user.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Password reset required for security reasons. Please use the 'Forgot Password' feature.",
+                )
 
             # Security checks
             security_ok, security_message = await security_service.check_login_security(
@@ -944,12 +967,13 @@ class AuthService:
                 )
 
             # Tenant eligibility
-            await self._check_tenant_login_eligibility(db, tenant)
+            if tenant:
+                await self._check_tenant_login_eligibility(db, tenant)
 
             # User eligibility
             await self._check_user_login_eligibility(user)
 
-            # Tenant-user relationship verification
+            # Verify user belongs to the specified tenant
             if tenant and user.tenant_id != tenant.id:
                 await security_service.record_login_attempt(
                     db, user, False, ip_address, user_agent
@@ -979,8 +1003,17 @@ class AuthService:
                 "refresh_token": tokens["refresh_token"],
                 "token_type": "bearer",
                 "user": user,
-                "tenant_status": tenant.status if tenant else None,
-                "tenant_tier": tenant.tier if tenant else None,
+                "tenant": (
+                    {
+                        "id": str(tenant.id) if tenant else str(user.tenant_id),
+                        "name": tenant.name if tenant else user.tenant.name,
+                        "slug": tenant.slug if tenant else user.tenant.slug,
+                        "tier": tenant.tier if tenant else user.tenant.tier,
+                        "status": tenant.status if tenant else user.tenant.status,
+                    }
+                    if tenant or hasattr(user, "tenant")
+                    else None
+                ),
                 "session_id": tokens["session_id"],
                 "password_reset_required": self._should_force_password_reset(user),
             }
@@ -998,6 +1031,22 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Login failed due to a server error. Please try again.",
             )
+
+    async def _get_tenant_by_slug(
+        self, db: AsyncSession, tenant_slug: str
+    ) -> Optional[Tenant]:
+        """Get tenant by slug without tenant context"""
+        try:
+            result = await db.execute(
+                select(Tenant).where(
+                    Tenant.slug == tenant_slug,
+                    Tenant.status != "cancelled",  # Only active tenants
+                )
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting tenant by slug {tenant_slug}: {e}")
+            return None
 
     def _validate_login_input(self, login_data: UserLogin) -> List[str]:
         """Comprehensive login input validation"""
@@ -1150,20 +1199,31 @@ class AuthService:
 
     def _should_force_password_reset(self, user: User) -> bool:
         """Check if password reset should be forced"""
-        # First login
+        # First login (user was created but never logged in)
         if user.last_login_at is None:
+            logger.info(f"First login detected for user: {user.email}")
             return True
 
         # Password expired
         if password_policy_service.is_password_expired(user):
+            logger.info(f"Password expired for user: {user.email}")
             return True
 
         # Admin forced reset
-        if user.settings.get("force_password_reset"):
+        if user.settings and user.settings.get("force_password_reset"):
+            logger.info(f"Admin forced password reset for user: {user.email}")
             return True
 
         # Security policy requires reset
-        if user.settings.get("password_reset_required"):
+        if user.settings and user.settings.get("password_reset_required"):
+            logger.info(
+                f"Security policy requires password reset for user: {user.email}"
+            )
+            return True
+
+        # Check if this is a system-created user with temporary password
+        if user.settings and user.settings.get("temporary_password"):
+            logger.info(f"Temporary password detected for user: {user.email}")
             return True
 
         return False
@@ -1461,8 +1521,8 @@ class AuthService:
             "password_changed_at": datetime.utcnow().isoformat(),
             "login_count": 0,
             "account_locked_until": None,
-            "force_password_reset": user_data_dict.get("last_login_at")
-            is None,  # Force reset on first login
+            "temporary_password": True,
+            "force_password_reset": True,  # Force reset on first login
         }
 
         user = User(**user_data_dict)
