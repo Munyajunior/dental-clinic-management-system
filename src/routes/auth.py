@@ -36,16 +36,38 @@ async def login(
 ) -> Any:
     """User login endpoint - uses system session to find user across tenants"""
     try:
-        result = await auth_service.login(db, login_data)
-        return {
+        # Get client IP and user agent for security
+        client_ip = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent", "unknown")
+
+        result = await auth_service.login(
+            db, login_data, ip_address=client_ip, user_agent=user_agent
+        )
+
+        # Build response with tenant info
+        user_public = UserPublic.from_orm(result["user"])
+
+        response_data = {
             "access_token": result["access_token"],
             "refresh_token": result["refresh_token"],
             "token_type": "bearer",
-            "user": UserPublic.from_orm(result["user"]),
+            "user": user_public,
         }
+
+        # Add tenant info if available
+        if "tenant" in result and result["tenant"]:
+            response_data["tenant"] = result["tenant"]
+
+        return response_data
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Login error: {e}")
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed due to a server error",
+        )
 
 
 @router.post(
