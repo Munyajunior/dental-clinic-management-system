@@ -2,6 +2,7 @@
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from .base_schemas import BaseSchema, ResponseBase
+from schemas.user_schemas import UserPublic
 
 
 class PasswordResetRequest(BaseModel):
@@ -33,7 +34,9 @@ class PasswordResetComplete(BaseModel):
 class PasswordResetResponse(ResponseBase):
     """Password reset response schema"""
 
-    pass
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    user: Optional[UserPublic] = None
 
 
 class EnforcedPasswordReset(BaseSchema):
