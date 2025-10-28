@@ -1,6 +1,7 @@
 # src/services/tenant_service.py
 from typing import Optional
 from uuid import UUID
+from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from fastapi import HTTPException, status
@@ -55,7 +56,10 @@ class TenantService(BaseService):
         return tenant
 
     async def create_tenant_with_admin(
-        self, db: AsyncSession, tenant_data: TenantCreate
+        self,
+        db: AsyncSession,
+        tenant_data: TenantCreate,
+        background_tasks: BackgroundTasks,
     ) -> Tenant:
         """Create tenant with admin user and send welcome email"""
         try:
@@ -70,18 +74,17 @@ class TenantService(BaseService):
             # Create tenant
             tenant = Tenant(**tenant_data.model_dump())
             db.add(tenant)
-            await db.flush()  # Get tenant ID without committing
-            await db.commit()
+            await db.flush()
 
             logger.info(f"Creating tenant: {tenant.name} with ID: {tenant.id}")
 
             # Create admin user for the tenant WITH the tenant_id
             admin_user = await auth_service.create_tenant_admin_user(
-                db, tenant, tenant_data.contact_email
+                db, tenant, tenant_data.contact_email, background_tasks
             )
 
-            # Now commit both tenant and user
-
+            # Now commit both tenant and user together
+            await db.commit()
             await db.refresh(tenant)
 
             logger.info(
@@ -89,6 +92,9 @@ class TenantService(BaseService):
             )
             return tenant
 
+        except HTTPException:
+            await db.rollback()
+            raise
         except Exception as e:
             await db.rollback()
             logger.error(f"Failed to create tenant with admin: {e}")
