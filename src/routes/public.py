@@ -1,5 +1,5 @@
 # src/routes/public.py
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_db_session  # Session without tenant context
 from typing import Any
@@ -36,27 +36,39 @@ async def list_public_tenants(db: AsyncSession = Depends(get_db_session)):
 async def register_tenant(
     request: Request,
     tenant_data: TenantCreate,
+    background_task: BackgroundTasks,
     db: AsyncSession = Depends(get_db_session),  # Use system session
 ) -> Any:
     """Public tenant registration endpoint"""
     try:
-        # Additional validation for public registration
+
+        # Quick validation
+        if not tenant_data.slug or not tenant_data.contact_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Clinic URL and contact email are required",
+            )
+
+        # Check for existing tenant
         if await tenant_service.get_by_slug(db, tenant_data.slug):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Clinic URL already exists"
             )
 
         # Create tenant with admin user
-        tenant = await tenant_service.create_tenant_with_admin(db, tenant_data)
+        tenant = await tenant_service.create_tenant_with_admin(
+            db, tenant_data, background_task
+        )
 
         logger.info(f"New tenant registered: {tenant.name} ({tenant.slug})")
 
         return TenantPublic.from_orm(tenant)
 
     except HTTPException:
-        # Re-raise HTTP exceptions
+        await db.rollback()
         raise
     except Exception as e:
+        await db.rollback()
         logger.error(f"Tenant registration failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
