@@ -4,7 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Any
 from uuid import UUID
 from db.database import get_db
-from schemas.user_schemas import UserCreate, UserUpdate, UserPublic, UserPasswordChange
+from schemas.user_schemas import (
+    UserCreate,
+    UserUpdate,
+    UserPublic,
+)
 from services.user_service import user_service
 from services.auth_service import auth_service
 from utils.rate_limiter import limiter
@@ -99,29 +103,6 @@ async def update_user(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return UserPublic.from_orm(user)
-
-
-@router.post(
-    "/{user_id}/change-password",
-    summary="Change password",
-    description="Change user password",
-)
-async def change_password(
-    user_id: UUID,
-    password_data: UserPasswordChange,
-    db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(auth_service.get_current_user),
-) -> Any:
-    """Change password endpoint"""
-    # Users can change their own password, admins can change any
-    if current_user.id != user_id and current_user.role not in ["admin", "manager"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to change this user's password",
-        )
-
-    await user_service.change_password(db, user_id, password_data)
-    return {"message": "Password changed successfully"}
 
 
 @router.delete(
