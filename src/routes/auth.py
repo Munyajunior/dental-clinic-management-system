@@ -9,8 +9,12 @@ from schemas.user_schemas import (
     UserCreate,
     UserPublic,
 )
-from schemas.auth_schemas import TokenResponse
-from schemas.auth_schemas import RefreshTokenRequest, LogoutRequest, LogoutResponse
+from schemas.auth_schemas import (
+    RefreshTokenRequest,
+    LogoutRequest,
+    LogoutResponse,
+    TokenResponse,
+)
 from services.auth_service import auth_service
 from utils.rate_limiter import limiter
 from utils.logger import setup_logger
