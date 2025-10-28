@@ -744,6 +744,7 @@ dependencies = [
     { name = "slowapi" },
     { name = "sqlalchemy" },
     { name = "statsmodels" },
+    { name = "stripe" },
     { name = "transformers" },
     { name = "twilio" },
     { name = "uvicorn" },
@@ -800,6 +801,7 @@ requires-dist = [
     { name = "slowapi", specifier = ">=0.1.9" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "statsmodels", specifier = ">=0.14.0" },
+    { name = "stripe", specifier = ">=13.0.1" },
     { name = "transformers", specifier = ">=4.53.0" },
     { name = "twilio", specifier = ">=9.6.0" },
     { name = "uvicorn", specifier = ">=0.35.0" },
@@ -2097,6 +2099,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/48/973da1ee8bc0743519759e74c3615b39acdc3faf00e0a0710f8c856d8c9d/statsmodels-0.14.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5a085d47c8ef5387279a991633883d0e700de2b0acc812d7032d165888627bef", size = 10453538, upload-time = "2025-07-07T14:24:06.959Z" },
     { url = "https://files.pythonhosted.org/packages/c7/d6/18903fb707afd31cf1edaec5201964dbdacb2bfae9a22558274647a7c88f/statsmodels-0.14.5-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:9f866b2ebb2904b47c342d00def83c526ef2eb1df6a9a3c94ba5fe63d0005aec", size = 10681584, upload-time = "2025-07-07T14:24:21.038Z" },
     { url = "https://files.pythonhosted.org/packages/44/d6/80df1bbbfcdc50bff4152f43274420fa9856d56e234d160d6206eb1f5827/statsmodels-0.14.5-cp313-cp313-win_amd64.whl", hash = "sha256:2a06bca03b7a492f88c8106103ab75f1a5ced25de90103a89f3a287518017939", size = 9604641, upload-time = "2025-07-07T12:08:36.23Z" },
+]
+
+[[package]]
+name = "stripe"
+version = "13.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d8/36/edac714e44a1a0048e74cc659b6070b42dd7027473e8f9f06a727b3860b6/stripe-13.0.1.tar.gz", hash = "sha256:5869739430ff73bd9cd81275abfb79fd4089e97e9fd98d306a015f5defd39a0d", size = 1263853, upload-time = "2025-10-03T19:37:17.335Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/ac/a911f3c850420ab42447f5c049f570e55f34e0aa0b2e6a1d1a059a5656c4/stripe-13.0.1-py3-none-any.whl", hash = "sha256:7804cee14580ab37bbc1e5f6562e49dea0686ab3cb34384eb9386387ed8ebd0c", size = 1849008, upload-time = "2025-10-03T19:37:14.953Z" },
 ]
 
 [[package]]
