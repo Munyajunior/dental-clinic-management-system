@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+# Notes:
+# 1) Install pre-commit in developer machines and CI: pip install pre-commit
+# 2) Initialize baseline: detect-secrets scan > .secrets.baseline
+# 3) Add a CI step to run `pre-commit run --all-files` to block secrets in PRs
