@@ -37,7 +37,7 @@ class PasswordResetToken(Base):
     is_used = Column(Boolean, default=False, nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
 
-    tenant = relationship("Tenant")
+    tenant = relationship("Tenant", back_populates="password_reset_tokens")
     user = relationship("User", back_populates="password_reset_tokens")
 
     def __repr__(self):
