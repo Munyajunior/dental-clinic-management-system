@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from fastapi import HTTPException, status
 from models.user import User, StaffRole
-from schemas.user_schemas import UserCreate, UserUpdate, UserPasswordChange
+from schemas.user_schemas import UserCreate, UserUpdate
 from utils.logger import setup_logger
 from .base_service import BaseService
 from .auth_service import auth_service
@@ -86,7 +86,7 @@ class UserService(BaseService):
         return user
 
     async def change_password(
-        self, db: AsyncSession, user_id: UUID, password_data: UserPasswordChange
+        self, db: AsyncSession, user_id: UUID, password_data
     ) -> bool:
         """Change user password"""
         user = await self.get(db, user_id)
