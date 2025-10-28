@@ -1,6 +1,7 @@
 # src/schemas/password_reset_schemas.py
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
+from .base_schemas import BaseSchema, ResponseBase
 
 
 class PasswordResetRequest(BaseModel):
@@ -29,8 +30,34 @@ class PasswordResetComplete(BaseModel):
         return v
 
 
-class PasswordResetResponse(BaseModel):
+class PasswordResetResponse(ResponseBase):
     """Password reset response schema"""
 
-    success: bool
-    message: str
+    pass
+
+
+class EnforcedPasswordReset(BaseSchema):
+    email: EmailStr
+    new_password: str
+    tenant_slug: Optional[str]
+
+
+class ChangePasswordRequest(BaseModel):
+    """User password change schema"""
+
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        return v
+
+
+class AdminForcePasswordReset(BaseModel):
+    """Schema for admin forcing password reset"""
+
+    user_id: str
+    reason: Optional[str] = "Admin required password reset"
