@@ -71,6 +71,7 @@ class TenantService(BaseService):
             tenant = Tenant(**tenant_data.model_dump())
             db.add(tenant)
             await db.flush()  # Get tenant ID without committing
+            await db.commit()
 
             logger.info(f"Creating tenant: {tenant.name} with ID: {tenant.id}")
 
@@ -80,7 +81,7 @@ class TenantService(BaseService):
             )
 
             # Now commit both tenant and user
-            await db.commit()
+
             await db.refresh(tenant)
 
             logger.info(
