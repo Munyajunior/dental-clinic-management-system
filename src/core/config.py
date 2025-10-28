@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     FILE_ENCRYPTION_KEY: str = Field("")
     MEDICAL_RECORDS_STORAGE_PATH: str = Field("")
 
+    # Payment Service
+    STRIPE_SECRET_KEY: str = Field("")
+
     @property
     def POSTGRESQL_DATABASE_URL(self) -> str:
         return (
