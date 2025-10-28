@@ -1,7 +1,6 @@
 # src/db/database.py
 from core.config import settings
 from typing import AsyncGenerator, Dict, Any
-from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Optional
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -144,6 +143,7 @@ async def setup_rls():
             "payments",
             "newsletters",
             "newsletter_subscriptions",
+            "security_events",
         ]
 
         for table in tables_with_tenant:
