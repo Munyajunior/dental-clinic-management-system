@@ -102,6 +102,9 @@ class Tenant(Base):
     patients = relationship(
         "Patient", back_populates="tenant", cascade="all, delete-orphan"
     )
+    password_reset_tokens = relationship(
+        "PasswordResetToken", back_populates="tenant", cascade="all, delete-orphan"
+    )
     services = relationship(
         "Service", back_populates="tenant", cascade="all, delete-orphan"
     )
