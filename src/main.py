@@ -141,7 +141,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         # Database initialization
         logger.info("Initializing database...")
-        await initialize_database()
+        # await initialize_database()
 
         # Database check
         await check_db_connection()
