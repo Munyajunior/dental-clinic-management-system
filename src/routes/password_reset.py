@@ -11,7 +11,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
 from db.database import get_db, get_db_session
 from schemas.password_reset_schemas import (
     PasswordResetRequest,
@@ -21,9 +21,11 @@ from schemas.password_reset_schemas import (
     EnforcedPasswordReset,
     ChangePasswordRequest,
 )
+from schemas.user_schemas import UserPublic
 from models.user import StaffRole
 from services.password_reset_service import password_reset_service
 from services.auth_service import auth_service
+from core.config import settings
 from utils.rate_limiter import limiter
 from utils.logger import setup_logger
 
@@ -149,7 +151,7 @@ async def complete_password_reset(
 async def enforced_password_reset(
     user_id: UUID,
     reset_data: EnforcedPasswordReset = Body(...),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Enforced password reset endpoint"""
     try:
@@ -180,8 +182,25 @@ async def enforced_password_reset(
         # Clear any password reset flags
         await auth_service.clear_password_reset_requirements(db, user_id)
 
+        # Create new tokens since this is essentially a new login
+        access_token = auth_service.create_access_token(
+            data={"sub": str(user.id), "email": user.email, "role": user.role}
+        )
+
+        refresh_token, token_id = auth_service.create_refresh_token(str(user.id))
+        expires_at = datetime.utcnow() + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        await auth_service.store_refresh_token(
+            db, str(token_id), str(user.id), expires_at
+        )
+
         return PasswordResetResponse(
-            success=True, message="Password reset successfully"
+            success=True,
+            message="Password reset successfully",
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=UserPublic.from_orm(user),
         )
 
     except HTTPException:
