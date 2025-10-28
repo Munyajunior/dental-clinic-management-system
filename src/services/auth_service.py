@@ -4,12 +4,13 @@ from typing import Optional, Dict, Any, Tuple, List
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, and_, func, update
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 import httpx
 from db.database import get_db
+from db.database import AsyncSessionLocal
 from core.config import settings
 from models.user import StaffRole, GenderEnum
 from models.user import User
@@ -24,6 +25,7 @@ from .base_service import BaseService
 import secrets
 import string
 import hashlib
+import asyncio
 
 logger = setup_logger("AUTH_SERVICE")
 
@@ -650,7 +652,7 @@ class AuthService:
         )
         return encoded_jwt
 
-    def create_refresh_token(self, user_id: UUID) -> Tuple[str, UUID]:
+    def create_refresh_token(self, user_id: str) -> Tuple[str, UUID]:
         """Create refresh token and store in database"""
         token_id = uuid4()
         expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -670,18 +672,18 @@ class AuthService:
     async def store_refresh_token(
         self,
         db: AsyncSession,
-        token_id: UUID,
-        user_id: UUID,
+        token_id: str,
+        user_id: str,
         expires_at: datetime,
-        session_id: UUID = None,
+        session_id: Optional[str] = None,
     ) -> None:
         """Enhanced refresh token storage with session management"""
         refresh_token = RefreshToken(
-            id=token_id,
-            user_id=user_id,
+            id=UUID(token_id),
+            user_id=UUID(user_id),
             expires_at=expires_at,
             is_revoked=False,
-            session_id=session_id,
+            session_id=UUID(session_id),
             created_at=datetime.utcnow(),
         )
         db.add(refresh_token)
@@ -908,8 +910,8 @@ class AuthService:
         self,
         db: AsyncSession,
         login_data: UserLogin,
-        ip_address: str = None,
-        user_agent: str = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Enterprise-grade login with comprehensive security checks"""
         try:
@@ -1208,14 +1210,14 @@ class AuthService:
         )
 
         # Create and store refresh token with session context
-        refresh_token, token_id = self.create_refresh_token(user.id)
+        refresh_token, token_id = self.create_refresh_token(str(user.id))
         expires_at = datetime.utcnow() + timedelta(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
 
         # Store refresh token with session info
         await self.store_refresh_token(
-            db, token_id, getattr(user, "id"), expires_at, session_id
+            db, str(token_id), getattr(user, "id"), expires_at, str(session_id)
         )
 
         # Update user's last login
@@ -1232,7 +1234,11 @@ class AuthService:
         }
 
     async def create_tenant_admin_user(
-        self, db: AsyncSession, tenant: Tenant, email: str
+        self,
+        db: AsyncSession,
+        tenant: Tenant,
+        email: str,
+        background_tasks: BackgroundTasks,
     ) -> User:
         """Create default admin user for new tenant"""
         # Generate temporary password
@@ -1254,18 +1260,18 @@ class AuthService:
                 is_active=True,
             )
 
-            user = await self.create_user(db, user_data, tenant.id)
+            user = await self.create_user(db, user_data, str(tenant.id))
 
             logger.info(
                 f"Created tenant admin user: {email} for tenant: {tenant.name} with password: {temp_password}"
             )
 
             # Send welcome email with setup instructions
-            await email_service.send_tenant_welcome_email(
-                user_email=user.email,
-                user_name=f"{user.first_name} {user.last_name}",
-                temp_password=temp_password,
-                tenant_slug=tenant.slug,
+            background_tasks.add_task(
+                self.send_tenant_welcome_email_sync,
+                str(user.id),
+                temp_password,
+                str(tenant.slug),
             )
 
             return user
@@ -1273,6 +1279,42 @@ class AuthService:
         except Exception as e:
             logger.error(f"Failed to create tenant admin user: {e}")
             raise
+
+    async def send_tenant_welcome_email_sync(
+        self, user_id: str, temp_password: str, tenant_slug: str
+    ):
+        """Async wrapper to send welcome tenant email (background task)"""
+        asyncio.create_task(
+            self._send_tenant_welcome_email_async(
+                UUID(user_id), temp_password, tenant_slug
+            )
+        )
+
+    async def _send_tenant_welcome_email_async(
+        self, user_id: UUID, temp_password: str, tenant_slug: str
+    ):
+        """Async function for sending tenant welcome email"""
+
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await db.execute(select(User).where(User.id == user_id))
+                user = result.scalar_one_or_none()
+
+                if not user:
+                    logger.error(f"User not found for welcome email: {user_id}")
+                    return
+
+                await email_service.send_tenant_welcome_email(
+                    user_email=str(user.email),
+                    user_name=f"{user.first_name} {user.last_name}",
+                    temp_password=temp_password,
+                    tenant_slug=tenant_slug,
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"Error in background welcome email for user {user_id}: {e}"
+                )
 
     async def refresh_tokens(
         self, db: AsyncSession, refresh_token: str
@@ -1300,11 +1342,13 @@ class AuthService:
             await self.revoke_refresh_token(db, old_token_id)
 
             # Create new refresh token
-            new_refresh_token, new_token_id = self.create_refresh_token(user.id)
+            new_refresh_token, new_token_id = self.create_refresh_token(str(user.id))
             expires_at = datetime.utcnow() + timedelta(
                 days=settings.REFRESH_TOKEN_EXPIRE_DAYS
             )
-            await self.store_refresh_token(db, new_token_id, user.id, expires_at)
+            await self.store_refresh_token(
+                db, str(new_token_id), str(user.id), expires_at
+            )
 
             return {
                 "access_token": access_token,
@@ -1369,7 +1413,7 @@ class AuthService:
         return user
 
     async def create_user(
-        self, db: AsyncSession, user_data: UserCreate, tenant_id: UUID = None
+        self, db: AsyncSession, user_data: UserCreate, tenant_id: Optional[str] = None
     ) -> User:
         """Create user - automatically uses current tenant context if not specified"""
         # Validate password strength
@@ -1383,6 +1427,7 @@ class AuthService:
                 + "; ".join(errors),
             )
 
+        # Check for existing user across all tenants
         result = await db.execute(select(User).where(User.email == user_data.email))
         existing_user = result.scalar_one_or_none()
         if existing_user:
@@ -1395,9 +1440,21 @@ class AuthService:
         user_data_dict = user_data.model_dump(exclude={"password"})
         user_data_dict["hashed_password"] = hashed_password
 
-        # Set tenant context
+        # Set tenant context - CRITICAL FIX
         if tenant_id:
-            user_data_dict["tenant_id"] = tenant_id
+            user_data_dict["tenant_id"] = UUID(tenant_id)
+        else:
+            # Try to get tenant context from database session
+            from db.database import tenant_id_var
+
+            current_tenant_id = tenant_id_var.get()
+            if current_tenant_id:
+                user_data_dict["tenant_id"] = UUID(current_tenant_id)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Tenant context is required to create user",
+                )
 
         # Initialize user settings with security defaults
         user_data_dict["settings"] = {
@@ -1410,13 +1467,12 @@ class AuthService:
 
         user = User(**user_data_dict)
         db.add(user)
-        await db.commit()
         await db.refresh(user)
 
         logger.info(f"Created new user: {user.email} in tenant: {user.tenant_id}")
-
         # TODO: Send welcome email with security guidelines
         # TODO: Log user creation for audit purposes
+
         return user
 
 
