@@ -1,5 +1,6 @@
 # src/schemas/auth_schemas.py
-from pydantic import BaseModel
+from schemas.base_schemas import ResponseBase, BaseSchema
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 
 
@@ -23,11 +24,7 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
-class LogoutResponse(BaseModel):
+class LogoutResponse(ResponseBase):
     """Logout response schema"""
 
-    success: bool = True
-    message: Optional[str] = None
-
-    def dict(self, **kwargs):
-        return super().model_dump(**kwargs)
+    pass
