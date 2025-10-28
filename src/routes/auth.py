@@ -86,6 +86,7 @@ async def register(
 ) -> Any:
     """User registration endpoint - creates user within current tenant"""
     user = await auth_service.create_user(db, user_data)
+    await db.commit()
     return UserPublic.from_orm(user)
 
 
