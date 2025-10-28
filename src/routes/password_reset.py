@@ -43,12 +43,12 @@ async def request_password_reset(
     request: Request,
     reset_request: PasswordResetRequest,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_session),
 ) -> Any:
     """Request password reset endpoint"""
     try:
         result = await password_reset_service.request_password_reset(
-            db, reset_request.email
+            db, reset_request.email, background_tasks
         )
 
         if result["success"]:
@@ -110,12 +110,14 @@ async def verify_reset_token(
     description="Complete password reset with new password",
 )
 async def complete_password_reset(
-    complete_request: PasswordResetComplete, db: AsyncSession = Depends(get_db)
+    complete_request: PasswordResetComplete,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Complete password reset endpoint"""
     try:
         result = await password_reset_service.complete_password_reset(
-            db, complete_request.token, complete_request.new_password
+            db, complete_request.token, complete_request.new_password, background_tasks
         )
 
         if result["success"]:
