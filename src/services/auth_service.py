@@ -14,7 +14,7 @@ from db.database import AsyncSessionLocal
 from core.config import settings
 from models.user import StaffRole, GenderEnum
 from models.user import User
-from models.tenant import Tenant, TenantStatus, TenantTier, BillingCycle
+from models.tenant import Tenant, TenantPaymentStatus, TenantTier, BillingCycle
 from models.auth import RefreshToken, LoginAttempt
 from schemas.user_schemas import UserLogin, UserCreate
 from services.email_service import email_service
@@ -165,7 +165,7 @@ class PasswordPolicyService:
         return password_age.days > self.max_age_days
 
 
-class TenantStatusService:
+class TenantPaymentStatusService:
     """Enterprise tenant status and subscription management"""
 
     def __init__(self):
@@ -181,23 +181,23 @@ class TenantStatusService:
         current_time = datetime.utcnow()
 
         # Status-based checks
-        status_checks = {
-            TenantStatus.CANCELLED: (
+        payment_status_checks = {
+            TenantPaymentStatus.CANCELLED: (
                 False,
                 "This clinic account has been cancelled. Please contact support.",
             ),
-            TenantStatus.SUSPENDED: (
+            TenantPaymentStatus.SUSPENDED: (
                 False,
                 "This clinic account has been suspended due to policy violation. Please contact support.",
             ),
-            TenantStatus.PENDING: (True, "Account pending activation"),
+            TenantPaymentStatus.PENDING: (True, "Account pending activation"),
         }
 
-        if tenant.status in status_checks:
-            return status_checks[tenant.status]
+        if tenant.payment_status in payment_status_checks:
+            return payment_status_checks[tenant.payment_status]
 
         # Trial account checks
-        if tenant.status == TenantStatus.TRIAL:
+        if tenant.payment_status == TenantPaymentStatus.TRIAL:
             # Check trial expiration
             if tenant.trial_ends_at and tenant.trial_ends_at < current_time:
                 return (
@@ -213,7 +213,7 @@ class TenantStatusService:
             return True, "Trial account active"
 
         # Active account checks
-        elif tenant.status == TenantStatus.ACTIVE:
+        elif tenant.payment_status == TenantPaymentStatus.ACTIVE:
             # Check subscription status for paid plans
             if tenant.tier != TenantTier.TRIAL:
                 subscription_ok, sub_message = await self._check_subscription_status(
@@ -230,7 +230,7 @@ class TenantStatusService:
             return True, "Active account"
 
         # Grace period checks
-        elif tenant.status == TenantStatus.GRACE_PERIOD:
+        elif tenant.payment_status == TenantPaymentStatus.GRACE_PERIOD:
             if (
                 tenant.grace_period_ends_at
                 and tenant.grace_period_ends_at < current_time
@@ -241,7 +241,7 @@ class TenantStatusService:
                 )
             return True, "Account in grace period"
 
-        return False, "Unknown account status. Please contact support."
+        return False, "Unknown account payment status. Please contact support."
 
     async def _check_trial_limits(
         self, db: AsyncSession, tenant: Tenant
@@ -254,28 +254,30 @@ class TenantStatusService:
             tier_features = self.get_tenant_tier_features(tenant.tier)
 
             # Check user limit
-            if usage.active_users >= tier_features["max_users"]:
+            if usage.get("active_users") >= tier_features["max_users"]:
                 return (
                     False,
                     "Trial user limit reached. Please upgrade to add more users.",
                 )
 
             # Check patient limit
-            if usage.patient_count >= tier_features["max_patients"]:
+            if usage.get("patient_count") >= tier_features["max_patients"]:
                 return (
                     False,
                     "Trial patient limit reached. Please upgrade to add more patients.",
                 )
 
             # Check storage limit
-            if usage.storage_used_gb >= tier_features["max_storage_gb"]:
+            if usage.get("storage_used_gb") >= tier_features["max_storage_gb"]:
                 return (
                     False,
                     "Trial storage limit reached. Please upgrade for more storage.",
                 )
 
             # Check API calls
-            if usage.api_calls_this_month >= tier_features.get("max_api_calls", 1000):
+            if usage.get("api_calls_this_month") >= tier_features.get(
+                "max_api_calls", 1000
+            ):
                 return (
                     False,
                     "Trial API limit reached. Please upgrade for higher limits.",
@@ -550,7 +552,7 @@ class SecurityService:
 
 # Initialize services
 password_policy_service = PasswordPolicyService()
-tenant_status_service = TenantStatusService()
+tenant_status_service = TenantPaymentStatusService()
 security_service = SecurityService()
 
 
@@ -1040,7 +1042,7 @@ class AuthService:
             result = await db.execute(
                 select(Tenant).where(
                     Tenant.slug == tenant_slug,
-                    Tenant.status != "cancelled",  # Only active tenants
+                    Tenant.status == "active",  # Only active tenants
                 )
             )
             return result.scalar_one_or_none()
@@ -1227,6 +1229,34 @@ class AuthService:
             return True
 
         return False
+
+    async def get_user_by_email_and_tenant(
+        self, db: AsyncSession, email: str, tenant_slug: str
+    ) -> Optional[User]:
+        """Get user by email and tenant slug (for enforced password resets)"""
+        try:
+            # First get the tenant by slug
+            result = await db.execute(
+                select(Tenant).where(
+                    Tenant.slug == tenant_slug, Tenant.status != "cancelled"
+                )
+            )
+            tenant = result.scalar_one_or_none()
+
+            if not tenant:
+                return None
+
+            # Then get user by email and tenant ID
+            result = await db.execute(
+                select(User).where(
+                    User.email == email, User.tenant_id == tenant.id, User.is_active
+                )
+            )
+            return result.scalar_one_or_none()
+
+        except Exception as e:
+            logger.error(f"Error getting user by email and tenant: {e}")
+            return None
 
     async def _update_login_analytics(
         self, db: AsyncSession, user: User, tenant: Optional[Tenant]
