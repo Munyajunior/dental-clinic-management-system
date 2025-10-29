@@ -214,6 +214,72 @@ async def enforced_password_reset(
 
 
 @router.post(
+    "/enforced-password-reset",
+    response_model=PasswordResetResponse,
+    summary="Enforced password reset",
+    description="Reset password for enforced scenarios (first login, admin requirement)",
+)
+async def enforced_password_reset_by_slug(
+    reset_data: EnforcedPasswordReset = Body(...),
+    db: AsyncSession = Depends(get_db_session),  # Use system session
+) -> Any:
+    """Enforced password reset endpoint that doesn't require tenant context"""
+    try:
+        # Get user by email and tenant slug
+        user = await auth_service.get_user_by_email_and_tenant(
+            db, reset_data.email, reset_data.tenant_slug
+        )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found in specified clinic",
+            )
+
+        # Verify this is an allowed enforced reset scenario
+        if not auth_service.can_user_do_enforced_reset(user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Enforced password reset not allowed for this user",
+            )
+
+        # Update password
+        await auth_service.update_user_password(db, user.id, reset_data.new_password)
+
+        # Clear any password reset flags
+        await auth_service.clear_password_reset_requirements(db, user.id)
+
+        # Create new tokens since this is essentially a new login
+        access_token = auth_service.create_access_token(
+            data={"sub": str(user.id), "email": user.email, "role": user.role}
+        )
+
+        refresh_token, token_id = auth_service.create_refresh_token(str(user.id))
+        expires_at = datetime.utcnow() + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        await auth_service.store_refresh_token(
+            db, str(token_id), str(user.id), expires_at
+        )
+
+        return PasswordResetResponse(
+            success=True,
+            message="Password reset successfully",
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=UserPublic.from_orm(user),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Enforced password reset failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset password",
+        )
+
+
+@router.post(
     "/{user_id}/change-password",
     response_model=PasswordResetResponse,
     summary="Change password",
