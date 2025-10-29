@@ -42,7 +42,7 @@ class PasswordResetResponse(ResponseBase):
 class EnforcedPasswordReset(BaseSchema):
     email: EmailStr
     new_password: str
-    tenant_slug: Optional[str]
+    tenant_slug: str
 
 
 class ChangePasswordRequest(BaseModel):
