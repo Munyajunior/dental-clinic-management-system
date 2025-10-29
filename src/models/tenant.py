@@ -29,13 +29,19 @@ class TenantTier(str, PyEnum):
     ENTERPRISE = "enterprise"
 
 
-class TenantStatus(str, PyEnum):
+class TenantPaymentStatus(str, PyEnum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     TRIAL = "trial"
     CANCELLED = "cancelled"
     PENDING = "pending"  # Waiting for payment/verification
     GRACE_PERIOD = "grace_period"  # Past due but in grace period
+
+
+class TenantStatus(str, PyEnum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    DEACTIVATED = "deactivated"
 
 
 class BillingCycle(str, PyEnum):
@@ -56,7 +62,10 @@ class Tenant(Base):
 
     # Tenant Status & Tier
     tier = Column(Enum(TenantTier), default=TenantTier.TRIAL, nullable=False)
-    status = Column(Enum(TenantStatus), default=TenantStatus.PENDING, nullable=False)
+    payment_status = Column(
+        Enum(TenantPaymentStatus), default=TenantPaymentStatus.PENDING, nullable=False
+    )
+    status = Column(Enum(TenantStatus), default=TenantStatus.ACTIVE, nullable=False)
 
     # Subscription & Billing
     subscription_id = Column(String(100), nullable=True)
