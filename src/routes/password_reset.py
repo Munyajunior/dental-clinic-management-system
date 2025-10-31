@@ -9,6 +9,7 @@ from fastapi import (
     Body,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import update, func
 from typing import Any
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,7 @@ from schemas.password_reset_schemas import (
     ChangePasswordRequest,
 )
 from schemas.user_schemas import UserPublic
-from models.user import StaffRole
+from models.user import StaffRole, User
 from services.password_reset_service import password_reset_service
 from services.auth_service import auth_service
 from core.config import settings
@@ -278,23 +279,34 @@ async def enforced_password_reset_by_slug(
                 detail="Password reset not allowed for this user. Please contact your administrator.",
             )
 
-        # Update password
+        # Update password - with explicit commit
         logger.info(f"Updating password for user: {user.email}")
-        await auth_service.update_user_password(
-            db, getattr(user, "id"), reset_data.new_password
+        updated_user = await auth_service.update_user_password(
+            db, getattr(user, "id"), reset_data.new_password, revoke_other_sessions=True
         )
 
-        # Clear any password reset flags - with enhanced debugging
+        # Clear any password reset flags - with multiple attempts if needed
         logger.info(
             f"Clearing password reset requirements for user: {user.email}, current settings: {user.settings}"
         )
+
+        # First attempt
         await auth_service.clear_password_reset_requirements(db, getattr(user, "id"))
 
-        # Verify the settings were cleared
-        await db.refresh(user)
-        logger.info(f"After clearing requirements - user settings: {user.settings}")
+        # Verify immediately
+        await db.refresh(updated_user)
+        logger.info(f"After first clear - user settings: {updated_user.settings}")
 
-        # Verify the requirements were actually cleared
+        # If still not cleared, try again
+        if updated_user.settings.get("force_password_reset"):
+            logger.warning("Reset flag still present, attempting second clear")
+            await auth_service.clear_password_reset_requirements(
+                db, getattr(user, "id")
+            )
+            await db.refresh(updated_user)
+            logger.info(f"After second clear - user settings: {updated_user.settings}")
+
+        # Final verification
         requirements_cleared = (
             await auth_service.verify_password_reset_requirements_cleared(
                 db, getattr(user, "id")
@@ -302,8 +314,21 @@ async def enforced_password_reset_by_slug(
         )
         if not requirements_cleared:
             logger.error(
-                f"Password reset requirements were not properly cleared for user: {user.email}"
+                f"Password reset requirements STILL not cleared for user: {user.email}"
             )
+            # Force clear by direct update
+            await db.execute(
+                update(User)
+                .where(User.id == user.id)
+                .values(
+                    settings=func.jsonb_set(
+                        User.settings, "{force_password_reset}", "false", True
+                    )
+                )
+            )
+            await db.commit()
+            await db.refresh(updated_user)
+            logger.info(f"After forced clear - user settings: {updated_user.settings}")
 
         # Create session and tokens
         session_id, session_data = (
@@ -312,9 +337,16 @@ async def enforced_password_reset_by_slug(
             )
         )
 
-        # Create new tokens since this is essentially a new login
+        # Create new token pair with session ID
+        # Note: We're using the user's email as the subject to match the login flow
+        # This is safe since this is essentially a new login
         access_token = auth_service.create_access_token(
-            data={"sub": str(user.id), "email": user.email, "role": user.role},
+            data={
+                "sub": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "tenant_id": str(user.tenant_id),
+            },
             session_id=session_id,
         )
 
