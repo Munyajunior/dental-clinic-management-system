@@ -144,6 +144,7 @@ async def setup_rls():
             "newsletters",
             "newsletter_subscriptions",
             "security_events",
+            "user_sessions",
         ]
 
         for table in tables_with_tenant:
