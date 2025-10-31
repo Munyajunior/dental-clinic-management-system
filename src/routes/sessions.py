@@ -1,7 +1,6 @@
 # src/routes/sessions.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
 from uuid import UUID
 
 from db.database import get_db
@@ -11,7 +10,7 @@ from schemas.auth_schemas import (
     ForceLogoutRequest,
     LogoutResponse,
 )
-from services.auth_service import auth_service, session_service
+from services.auth_service import auth_service
 from utils.logger import setup_logger
 
 logger = setup_logger("SESSION_ROUTER")
@@ -33,7 +32,7 @@ async def get_my_sessions(
     try:
         user, current_session_id = current_user
 
-        sessions = await session_service.get_active_sessions(db, user.id)
+        sessions = await auth_service.session_service.get_active_sessions(db, user.id)
 
         return ActiveSessionsResponse(
             success=True, sessions=sessions, total_sessions=len(sessions)
@@ -69,13 +68,16 @@ async def revoke_session(
                 detail="Cannot revoke current session. Use logout instead.",
             )
 
-        success = await session_service.revoke_session(
+        success = await auth_service.session_service.revoke_session(
             db, session_id, user.id, "user_revoked"
         )
 
         if success:
             return LogoutResponse(
-                success=True, message="Session revoked successfully", sessions_revoked=1
+                success=True,
+                message="Session revoked successfully",
+                sessions_revoked=1,
+                tokens_revoked=0,
             )
         else:
             raise HTTPException(
@@ -107,7 +109,7 @@ async def revoke_other_sessions(
     try:
         user, current_session_id = current_user
 
-        revoked_count = await session_service.revoke_all_user_sessions(
+        revoked_count = await auth_service.session_service.revoke_all_user_sessions(
             db,
             user.id,
             exclude_session_id=current_session_id,
@@ -118,6 +120,7 @@ async def revoke_other_sessions(
             success=True,
             message=f"Revoked {revoked_count} other sessions",
             sessions_revoked=revoked_count,
+            tokens_revoked=0,
         )
 
     except Exception as e:
@@ -150,7 +153,7 @@ async def get_user_sessions_admin(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
             )
 
-        sessions = await session_service.get_active_sessions(db, user_id)
+        sessions = await auth_service.session_service.get_active_sessions(db, user_id)
 
         return ActiveSessionsResponse(
             success=True, sessions=sessions, total_sessions=len(sessions)
