@@ -96,6 +96,26 @@ class UserPublic(BaseSchema):
     is_available: bool
     profile_picture: Optional[str] = None
 
+    @classmethod
+    def from_orm_safe(cls, user: Any) -> "UserPublic":
+        """Safe conversion from ORM model to UserPublic"""
+        return cls(
+            id=getattr(user, "id"),
+            first_name=getattr(user, "first_name", ""),
+            last_name=getattr(user, "last_name", ""),
+            email=getattr(user, "email"),
+            contact_number=getattr(user, "contact_number", ""),
+            role=getattr(user, "role"),
+            specialization=getattr(user, "specialization", None),
+            is_active=getattr(user, "is_active", True),
+            is_available=getattr(user, "is_available", True),
+            profile_picture=(
+                user.get_profile_picture_base64()
+                if hasattr(user, "get_profile_picture_base64")
+                else None
+            ),
+        )
+
 
 class UserLogin(BaseSchema):
     """User login schema"""
