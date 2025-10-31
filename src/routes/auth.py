@@ -40,6 +40,10 @@ async def login(
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("user-agent", "unknown")
 
+        # Set current IP and user agent for analytics
+        auth_service.current_ip = client_ip
+        auth_service.current_user_agent = user_agent
+
         result = await auth_service.login(
             db, login_data, ip_address=client_ip, user_agent=user_agent, request=request
         )
@@ -54,13 +58,13 @@ async def login(
             password_reset_required=result.get("password_reset_required", False),
         )
 
-    except HTTPException:
+    except HTTPException as he:
         raise
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.error(f"Unexpected login endpoint error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Login failed due to a server error",
+            detail="Login failed due to a server error. Please try again.",
         )
 
 
