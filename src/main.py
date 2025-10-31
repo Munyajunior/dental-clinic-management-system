@@ -48,6 +48,7 @@ from routes import (
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
 from utils.database_migration import verify_table_structure, add_missing_columns
+from services.email_service import email_service
 
 # Disable specific loggers
 for log in ["watchfiles", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"]:
@@ -319,6 +320,21 @@ async def list_tenants():
                 for tenant in tenants
             ]
         }
+
+
+@app.get("api/v2/email/health")
+async def email_health_check():
+    """Check email service health and connectivity"""
+    connectivity = await email_service.check_connectivity()
+    return {
+        "service": "resend",
+        "status": connectivity.get("service_status", "unknown"),
+        "dns_resolution": connectivity.get("dns_resolution", False),
+        "api_key_configured": connectivity.get("api_key_configured", False),
+        "consecutive_failures": connectivity.get("consecutive_failures", 0),
+        "last_success": connectivity.get("last_success"),
+        "details": connectivity,
+    }
 
 
 async def create_default_tenant():
