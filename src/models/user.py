@@ -1,6 +1,5 @@
 # src/models/user.py
 import base64
-import json
 import uuid
 from sqlalchemy import (
     Column,
@@ -12,6 +11,7 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     JSON,
+    Integer,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -76,6 +76,12 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     last_login_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Analytics fields
+    login_count = Column(Integer, default=0)
+    failed_login_attempts = Column(Integer, default=0)
+    last_failed_login = Column(DateTime(timezone=True), nullable=True)
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
     refresh_tokens = relationship(
@@ -108,6 +114,31 @@ class User(Base):
     updated_patients = relationship(
         "Patient", back_populates="updated_by_user", foreign_keys="[Patient.updated_by]"
     )
+
+    def __init__(self, **kwargs):
+        # Ensure settings is always a dict
+        if "settings" not in kwargs or kwargs["settings"] is None:
+            kwargs["settings"] = {}
+        super().__init__(**kwargs)
+
+    @property
+    def full_name(self) -> str:
+        """Get user's full name"""
+        return f"{self.first_name} {self.last_name}"
+
+    @property
+    def requires_password_reset(self) -> bool:
+        """Check if user requires password reset"""
+        if not self.settings:
+            return False
+        return any(
+            [
+                self.settings.get("force_password_reset"),
+                self.settings.get("password_reset_required"),
+                self.settings.get("temporary_password"),
+                self.last_login_at is None,  # First login
+            ]
+        )
 
     def set_profile_picture(self, image_data: bytes, content_type: str):
         """Store profile picture in the database."""
