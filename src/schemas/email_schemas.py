@@ -79,3 +79,27 @@ class EmailTemplate(BaseModel):
     text_template: Optional[str] = None
     description: Optional[str] = None
     variables: List[str] = []
+
+
+class TestEmailRequest(BaseModel):
+    email: EmailStr
+    test_type: Optional[str] = "connectivity"
+
+
+class TestEmailResponse(BaseModel):
+    success: bool
+    message: str
+    test_id: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class HealthCheckResponse(BaseModel):
+    service: str
+    status: str
+    dns_resolution: bool
+    api_key_configured: bool
+    templates_available: int
+    consecutive_failures: int
+    last_success: Optional[str] = None
+    details: Dict[str, Any]
