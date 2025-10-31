@@ -127,6 +127,10 @@ class ResendEmailService:
 
         # Template configurations
         self.template_configs = {
+            EmailType.TEST_EMAIL: {
+                "template": "test_email",
+                "subject": "Testing Email service",
+            },
             EmailType.WELCOME_TENANT: {
                 "template": "welcome_tenant",
                 "subject": "Welcome to KwantaBit Dental Clinic Management Suite - Your Default Admin Credentials",
