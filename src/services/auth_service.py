@@ -15,7 +15,7 @@ from core.config import settings
 from models.user import StaffRole, GenderEnum
 from models.user import User
 from models.tenant import Tenant, TenantPaymentStatus, TenantTier, BillingCycle
-from models.auth import RefreshToken, LoginAttempt
+from models.auth import RefreshToken, LoginAttempt, UserSession
 from schemas.user_schemas import UserLogin, UserCreate
 from services.email_service import email_service
 from services.usage_service import UsageService
@@ -36,7 +36,7 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 # Helper function for consistent UTC datetime
 def get_utc_now() -> datetime:
     """Get current UTC datetime with timezone awareness"""
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).isoformat()
 
 
 def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -44,8 +44,8 @@ def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=timezone.utc).isoformat()
+    return dt.astimezone(timezone.utc).isoformat()
 
 
 class PasswordPolicyService:
@@ -799,7 +799,7 @@ class SessionManagementService:
                 select(UserSession)
                 .where(
                     UserSession.user_id == user_id,
-                    UserSession.is_active,
+                    UserSession.is_active == True,
                     UserSession.expires_at > get_utc_now(),
                 )
                 .order_by(UserSession.last_activity.desc())
@@ -858,6 +858,7 @@ session_service = SessionManagementService()
 class AuthService:
     def __init__(self):
         self.user_service = BaseService(User)
+        self.session_service = session_service
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         return pwd_context.verify(plain_password, hashed_password)
@@ -1016,26 +1017,38 @@ class AuthService:
 
     async def revoke_refresh_token(self, db: AsyncSession, token_id: UUID) -> None:
         """Revoke a refresh token"""
-        result = await db.execute(
-            select(RefreshToken).where(RefreshToken.id == token_id)
-        )
-        refresh_token = result.scalars().first()
-        refresh_token.is_revoked = False
+        try:
+            result = await db.execute(
+                select(RefreshToken).where(RefreshToken.id == token_id)
+            )
+            refresh_token = result.scalar_one_or_none()
 
-        await db.commit()
-        await db.flush()
-        await db.refresh(refresh_token)
+            if refresh_token:
+                refresh_token.is_revoked = True
+                await db.commit()
+                logger.info(f"Revoked refresh token: {token_id}")
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to revoke refresh token: {e}")
+            raise
 
     async def revoke_all_user_tokens(self, db: AsyncSession, user_id: UUID) -> None:
         """Revoke all refresh tokens for a user"""
-        result = await db.execute(
-            select(RefreshToken).where(RefreshToken.user_id == user_id)
-        )
-        revoke_all_user_tokens = result.scalars().all()
-        revoke_all_user_tokens.is_revoked = True
-        await db.commit()
-        await db.flush()
-        await db.refresh(revoke_all_user_tokens)
+        try:
+            result = await db.execute(
+                select(RefreshToken).where(RefreshToken.user_id == user_id)
+            )
+            user_tokens = result.scalars().all()
+
+            for token in user_tokens:
+                token.is_revoked = True
+
+            await db.commit()
+            logger.info(f"Revoked all refresh tokens for user: {user_id}")
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to revoke user tokens: {e}")
+            raise
 
     async def verify_refresh_token(
         self, db: AsyncSession, token: str
@@ -1074,7 +1087,7 @@ class AuthService:
                 )
 
             # Verify session is still valid
-            if not await session_service.validate_session(db, session_id, user_id):
+            if not await self.session_service.validate_session(db, session_id, user_id):
                 await self.revoke_refresh_token(db, token_id)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1187,7 +1200,7 @@ class AuthService:
 
             # Revoke other sessions for security (optional)
             if revoke_other_sessions:
-                await session_service.revoke_all_user_sessions(
+                await self.session_service.revoke_all_user_sessions(
                     db, user_id, reason="password_change"
                 )
                 logger.info(
@@ -1372,7 +1385,7 @@ class AuthService:
 
             # Create user session
             device_info = self._extract_device_info(request)
-            session_id, session_data = await session_service.create_user_session(
+            session_id, session_data = await self.session_service.create_user_session(
                 db, user.id, ip_address, user_agent, device_info
             )
 
@@ -1661,11 +1674,7 @@ class AuthService:
         """Get user by email and tenant slug (for enforced password resets)"""
         try:
             # First get the tenant by slug
-            result = await db.execute(
-                select(Tenant).where(
-                    Tenant.slug == tenant_slug, Tenant.status == "active"
-                )
-            )
+            result = await db.execute(select(Tenant).where(Tenant.slug == tenant_slug))
             tenant = result.scalar_one_or_none()
 
             if not tenant:
@@ -1896,9 +1905,9 @@ class AuthService:
     async def logout(
         self,
         db: AsyncSession,
-        refresh_token: str = None,
-        session_id: UUID = None,
-        user_id: UUID = None,
+        refresh_token: Optional[str] = None,
+        session_id: Optional[UUID] = None,
+        user_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """Comprehensive logout with session management"""
         try:
@@ -1913,8 +1922,14 @@ class AuthService:
                         algorithms=[settings.ALGORITHM],
                     )
                     token_id = UUID(payload.get("jti"))
-                    session_id = UUID(payload.get("session_id"))
-                    user_id = UUID(payload.get("sub"))
+                    session_id_from_token = UUID(payload.get("session_id"))
+                    user_id_from_token = UUID(payload.get("sub"))
+
+                    # Use the session_id from token if not provided
+                    if not session_id:
+                        session_id = session_id_from_token
+                    if not user_id:
+                        user_id = user_id_from_token
 
                     await self.revoke_refresh_token(db, token_id)
                     result["tokens_revoked"] += 1
@@ -1924,21 +1939,17 @@ class AuthService:
 
             # Revoke specific session if provided
             if session_id and user_id:
-                if await session_service.revoke_session(
+                if await self.session_service.revoke_session(
                     db, session_id, user_id, "user_logout"
                 ):
                     result["sessions_revoked"] += 1
 
-            # If no specific session, revoke all user sessions
-            elif user_id:
-                revoked_count = await session_service.revoke_all_user_sessions(
-                    db, user_id, reason="user_logout"
-                )
-                result["sessions_revoked"] = revoked_count
-
-                # Also revoke all refresh tokens
-                await self.revoke_all_user_tokens(db, user_id)
-                result["tokens_revoked"] = revoked_count  # Estimate
+            # If no specific session but we have user_id, revoke current session
+            elif user_id and session_id:
+                if await self.session_service.revoke_session(
+                    db, session_id, user_id, "user_logout"
+                ):
+                    result["sessions_revoked"] += 1
 
             logger.info(f"Logout completed: {result}")
             return result
@@ -1954,7 +1965,7 @@ class AuthService:
         """Logout user from all devices with session management"""
         try:
             # Revoke all sessions
-            sessions_revoked = await session_service.revoke_all_user_sessions(
+            sessions_revoked = await self.session_service.revoke_all_user_sessions(
                 db, user_id, reason="security_policy"
             )
 
@@ -2017,7 +2028,9 @@ class AuthService:
             )
 
         # Validate session
-        if not await session_service.validate_session(db, UUID(session_id), user.id):
+        if not await self.session_service.validate_session(
+            db, UUID(session_id), user.id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
             )
@@ -2028,65 +2041,90 @@ class AuthService:
         self, db: AsyncSession, user_data: UserCreate, tenant_id: Optional[str] = None
     ) -> User:
         """Create user - automatically uses current tenant context if not specified"""
-        # Validate password strength
-        is_valid, errors = password_policy_service.validate_password_strength(
-            user_data.password
-        )
-        if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Password does not meet security requirements: "
-                + "; ".join(errors),
+        try:
+            # Validate password strength
+            is_valid, errors = password_policy_service.validate_password_strength(
+                user_data.password
             )
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Password does not meet security requirements: "
+                    + "; ".join(errors),
+                )
 
-        # Check for existing user across all tenants
-        result = await db.execute(select(User).where(User.email == user_data.email))
-        existing_user = result.scalar_one_or_none()
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="User with this email already exists",
-            )
+            # Check for existing user across all tenants
+            result = await db.execute(select(User).where(User.email == user_data.email))
+            existing_user = result.scalar_one_or_none()
+            if existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="User with this email already exists",
+                )
 
-        hashed_password = self.get_password_hash(user_data.password)
-        user_data_dict = user_data.model_dump(exclude={"password"})
-        user_data_dict["hashed_password"] = hashed_password
+            hashed_password = self.get_password_hash(user_data.password)
+            user_data_dict = user_data.model_dump(exclude={"password"})
+            user_data_dict["hashed_password"] = hashed_password
 
-        # Set tenant context - CRITICAL FIX
-        if tenant_id:
-            user_data_dict["tenant_id"] = UUID(tenant_id)
-        else:
-            # Try to get tenant context from database session
-            from db.database import tenant_id_var
-
-            current_tenant_id = tenant_id_var.get()
-            if current_tenant_id:
-                user_data_dict["tenant_id"] = UUID(current_tenant_id)
+            # CRITICAL FIX: Proper tenant_id handling
+            final_tenant_id = None
+            if tenant_id:
+                # Use provided tenant_id
+                final_tenant_id = UUID(tenant_id)
             else:
+                # Try to get tenant context from database session
+                from db.database import tenant_id_var
+
+                current_tenant_id = tenant_id_var.get()
+                if current_tenant_id:
+                    final_tenant_id = UUID(current_tenant_id)
+                else:
+                    # For system operations (like tenant creation), we need tenant_id
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Tenant context is required to create user",
+                    )
+
+            if not final_tenant_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Tenant context is required to create user",
                 )
 
-        # Initialize user settings with security defaults
-        user_data_dict["settings"] = {
-            "password_changed_at": datetime.utcnow().isoformat(),
-            "login_count": 0,
-            "account_locked_until": None,
-            "temporary_password": True,
-            "force_password_reset": True,  # Force reset on first login
-        }
+            user_data_dict["tenant_id"] = final_tenant_id
 
-        user = User(**user_data_dict)
-        db.add(user)
-        await db.flush()
-        await db.refresh(user)
+            # Initialize user settings with security defaults
+            user_data_dict["settings"] = user_data_dict.get("settings", {})
+            user_data_dict["settings"].update(
+                {
+                    "password_changed_at": datetime.now(timezone.utc).isoformat(),
+                    "login_count": 0,
+                    "account_locked_until": None,
+                    "temporary_password": True,
+                    "force_password_reset": True,  # Force reset on first login
+                }
+            )
 
-        logger.info(f"Created new user: {user.email} in tenant: {user.tenant_id}")
-        # TODO: Send welcome email with security guidelines
-        # TODO: Log user creation for audit purposes
+            user = User(**user_data_dict)
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
 
-        return user
+            logger.info(f"Created new user: {user.email} in tenant: {user.tenant_id}")
+            # TODO: Send welcome email with security guidelines
+            # TODO: Log user creation for audit purposes
+
+            return user
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to create user: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create user account",
+            )
 
 
 auth_service = AuthService()
