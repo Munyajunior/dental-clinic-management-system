@@ -74,21 +74,15 @@ class TenantService(BaseService):
             # Create tenant
             tenant = Tenant(**tenant_data.model_dump())
             db.add(tenant)
-            await db.flush()
+            await db.commit()  # Commit to get the tenant ID
+            await db.refresh(tenant)
 
-            logger.info(f"Creating tenant: {tenant.name} with ID: {tenant.id}")
+            logger.info(f"Created tenant: {tenant.name} with ID: {tenant.id}")
 
             # Create admin user for the tenant WITH the tenant_id
             admin_user = await auth_service.create_tenant_admin_user(
                 db, tenant, tenant_data.contact_email, background_tasks
             )
-
-            # Now commit both tenant and user together
-            await db.commit()
-
-            # Refresh both objects to ensure they're fully loaded
-            await db.refresh(tenant)
-            await db.refresh(admin_user)
 
             logger.info(
                 f"Created tenant {tenant.name} with admin user {admin_user.email}"
