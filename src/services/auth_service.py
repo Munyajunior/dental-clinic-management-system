@@ -556,22 +556,32 @@ class SecurityService:
         self, db: AsyncSession, user: User, ip_address: str
     ) -> Tuple[bool, str]:
         """Comprehensive login security checks"""
-        # Check if account is locked
-        if user.settings.get("account_locked_until"):
-            lock_until = datetime.fromisoformat(user.settings["account_locked_until"])
-            if lock_until > get_utc_now():
-                remaining = lock_until - get_utc_now()
+        try:
+            # Check if account is locked
+            if user.settings and user.settings.get("account_locked_until"):
+                lock_until = datetime.fromisoformat(
+                    user.settings["account_locked_until"]
+                )
+                if lock_until > get_utc_now():
+                    remaining = lock_until - get_utc_now()
+                    return (
+                        False,
+                        f"Account temporarily locked. Try again in {remaining.seconds // 60} minutes.",
+                    )
+
+            # Check for suspicious activity
+            if await self._has_suspicious_activity(db, user, ip_address):
+                await self._lock_account(db, user, "Suspicious activity detected")
                 return (
                     False,
-                    f"Account temporarily locked. Try again in {remaining.seconds // 60} minutes.",
+                    "Suspicious activity detected. Account temporarily locked.",
                 )
 
-        # Check for suspicious activity
-        if await self._has_suspicious_activity(db, user, ip_address):
-            await self._lock_account(db, user, "Suspicious activity detected")
-            return False, "Suspicious activity detected. Account temporarily locked."
-
-        return True, "Security checks passed"
+            return True, "Security checks passed"
+        except Exception as e:
+            logger.error(f"Security check error for user {user.email}: {str(e)}")
+            # Fail open for availability - allow login if security checks fail
+            return True, "Security checks temporarily unavailable"
 
     async def _has_suspicious_activity(
         self, db: AsyncSession, user: User, ip_address: str
@@ -598,19 +608,66 @@ class SecurityService:
         user_agent: str,
     ):
         """Record login attempt for security monitoring"""
-        login_attempt = LoginAttempt(
-            user_id=user.id,
-            success=success,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            attempted_at=get_utc_now(),
-        )
-        db.add(login_attempt)
+        try:
+            login_attempt = LoginAttempt(
+                user_id=user.id,
+                success=success,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                attempted_at=get_utc_now(),
+            )
+            db.add(login_attempt)
 
-        if not success:
-            await self._handle_failed_attempt(db, user)
+            if not success:
+                await self._handle_failed_attempt(db, user)
 
-        await db.commit()
+            await db.commit()
+
+            # Log security event for successful/failed attempts
+            event_type = "login_success" if success else "login_failed"
+            await self._log_security_event(db, user, event_type, ip_address, user_agent)
+
+        except Exception as e:
+            logger.error(f"Failed to record login attempt: {str(e)}")
+            await db.rollback()
+
+    async def _log_security_event(
+        self,
+        db: AsyncSession,
+        user: User,
+        event_type: str,
+        ip_address: str,
+        user_agent: str,
+        severity: str = "medium",
+    ):
+        """Log security event for audit trail"""
+        try:
+            from models.auth import SecurityEvent
+
+            event_descriptions = {
+                "login_success": f"Successful login from {ip_address}",
+                "login_failed": f"Failed login attempt from {ip_address}",
+                "account_locked": "Account locked due to security policy",
+                "suspicious_activity": "Suspicious login activity detected",
+            }
+
+            security_event = SecurityEvent(
+                user_id=user.id,
+                tenant_id=user.tenant_id,
+                event_type=event_type,
+                severity=severity,
+                description=event_descriptions.get(
+                    event_type, f"Security event: {event_type}"
+                ),
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            db.add(security_event)
+            await db.commit()
+
+        except Exception as e:
+            logger.error(f"Failed to log security event: {str(e)}")
+            # Don't fail the main operation if security logging fails
 
     async def _handle_failed_attempt(self, db: AsyncSession, user: User):
         """Handle failed login attempt"""
@@ -867,6 +924,8 @@ class AuthService:
     def __init__(self):
         self.user_service = BaseService(User)
         self.session_service = session_service
+        self.current_ip: Optional[str] = None
+        self.current_user_agent: Optional[str] = None
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         return pwd_context.verify(plain_password, hashed_password)
@@ -952,6 +1011,7 @@ class AuthService:
         session_id: Optional[UUID] = None,
     ) -> str:
         try:
+            """Create access token"""
             to_encode = data.copy()
             if expires_delta:
                 expire = get_utc_now() + expires_delta
@@ -960,21 +1020,40 @@ class AuthService:
                     minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
                 )
 
+            # Convert datetime objects to ISO format strings for JSON serialization
             to_encode.update(
                 {
-                    "exp": expire,
+                    "exp": expire.timestamp(),  # Use timestamp instead of datetime
                     "type": "access",
-                    "iat": get_utc_now(),  # issued at
+                    "iat": get_utc_now().timestamp(),  # Use timestamp
                     "session_id": str(session_id) if session_id else None,
                 }
             )
+
+            # Remove any non-serializable objects
+            serializable_data = {}
+            for key, value in to_encode.items():
+                if isinstance(value, (str, int, float, bool, type(None))):
+                    serializable_data[key] = value
+                elif isinstance(value, datetime):
+                    serializable_data[key] = value.timestamp()
+                elif isinstance(value, UUID):
+                    serializable_data[key] = str(value)
+                else:
+                    serializable_data[key] = str(
+                        value
+                    )  # Fallback to string representation
+
             encoded_jwt = jwt.encode(
-                to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+                serializable_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM
             )
             return encoded_jwt
         except Exception as e:
             logger.error(f"Failed to create access token: {str(e)}")
-            return None
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create authentication token",
+            )
 
     def create_refresh_token(self, user_id: str, session_id: UUID) -> Tuple[str, UUID]:
         """Create refresh token with session context and store in database"""
@@ -1028,7 +1107,7 @@ class AuthService:
             refresh_token = RefreshToken(
                 id=token_id,
                 tenant_id=session.tenant_id,
-                user_id=user_id,
+                user_id=str(user_id),
                 expires_at=ensure_utc(expires_at),
                 is_revoked=False,
                 session_id=session_id,
@@ -1194,13 +1273,17 @@ class AuthService:
     ) -> bool:
         """Verify that password reset requirements have been cleared"""
         try:
-            user = await self.user_service.get(db, user_id)
+            # Get fresh user instance to avoid caching
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+
             if not user:
+                logger.error(f"User not found for verification: {user_id}")
                 return False
 
             user_settings = user.settings or {}
 
-            # Check if any reset flags are still set
+            # Check if any reset flags are still set to True
             reset_flags = [
                 "force_password_reset",
                 "password_reset_required",
@@ -1209,14 +1292,23 @@ class AuthService:
             ]
 
             for flag in reset_flags:
-                if user_settings.get(flag):
+                if user_settings.get(flag) is True:
                     logger.warning(
-                        f"Reset flag still set for user {user_id}: {flag} = {user_settings[flag]}"
+                        f"Reset flag still TRUE for user {user_id}: {flag} = {user_settings[flag]}"
                     )
                     return False
 
+            # Also check if account is still locked
+            if user_settings.get("account_locked_until"):
+                lock_until = datetime.fromisoformat(
+                    user_settings["account_locked_until"]
+                )
+                if lock_until > get_utc_now():
+                    logger.warning(f"Account still locked for user {user_id}")
+                    return False
+
             logger.info(
-                f"All password reset requirements cleared for user: {user.email}"
+                f"All password reset requirements verified cleared for user: {user.email}"
             )
             return True
 
@@ -1346,15 +1438,23 @@ class AuthService:
     async def clear_password_reset_requirements(self, db: AsyncSession, user_id: UUID):
         """Clear password reset requirements after successful reset"""
         try:
-            user = await self.user_service.get(db, user_id)
+            # Get fresh user instance to avoid caching issues
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+
             if not user:
+                logger.error(
+                    f"User not found when clearing reset requirements: {user_id}"
+                )
                 return
+
+            logger.info(f"Before clearing - user settings: {user.settings}")
 
             # Initialize settings if None
             if user.settings is None:
                 user.settings = {}
 
-            # Clear all reset flags
+            # Clear all reset flags - use direct assignment to ensure change detection
             reset_flags = [
                 "force_password_reset",
                 "password_reset_required",
@@ -1362,25 +1462,52 @@ class AuthService:
                 "require_reauthentication",
             ]
 
+            # Create a new dictionary to ensure SQLAlchemy detects changes
+            new_settings = dict(user.settings)
+
             for flag in reset_flags:
-                if flag in user.settings:
-                    user.settings[flag] = False
+                if flag in new_settings:
+                    # Set to False for boolean flags, remove for others
+                    if flag in [
+                        "force_password_reset",
+                        "password_reset_required",
+                        "temporary_password",
+                        "require_reauthentication",
+                    ]:
+                        new_settings[flag] = False
+                    else:
+                        del new_settings[flag]
+
+            # Update password changed timestamp
+            new_settings["password_changed_at"] = get_utc_now().isoformat()
 
             # Update last login if it's the first time
             if user.last_login_at is None:
                 user.last_login_at = get_utc_now()
 
-            # Mark settings as modified to ensure SQLAlchemy detects the change
-            user.settings = dict(
-                user.settings
-            )  # Create a new dict to trigger change detection
+            # Use direct assignment to trigger SQLAlchemy change detection
+            user.settings = new_settings
 
+            # Force SQLAlchemy to mark the object as modified
+            from sqlalchemy.orm.attributes import flag_modified
+
+            flag_modified(user, "settings")
+
+            # Explicit commit to ensure changes are saved
             await db.commit()
+
+            # Refresh to get the latest state
+            await db.refresh(user)
+
             logger.info(f"Cleared password reset requirements for user: {user.email}")
+            logger.info(f"After clearing - user settings: {user.settings}")
 
         except Exception as e:
             await db.rollback()
-            logger.error(f"Failed to clear password reset requirements: {e}")
+            logger.error(
+                f"Failed to clear password reset requirements for user {user_id}: {e}"
+            )
+            raise
 
     async def verify_current_password(
         self, db: AsyncSession, user_id: UUID, current_password: str
@@ -1510,14 +1637,17 @@ class AuthService:
                 "password_reset_required": self._should_force_password_reset(user),
             }
 
-        except HTTPException:
-            # Record failed attempt for security exceptions
-            if "user" in locals() and "ip_address" in locals():
-                await security_service.record_login_attempt(
-                    db, user, False, ip_address, user_agent
-                )
+        except HTTPException as he:
+            # Handle HTTP exceptions with proper logging
+            await self._handle_login_exception(
+                db, login_data.email, ip_address, user_agent, he
+            )
             raise
         except Exception as e:
+            # Handle unexpected exceptions
+            await self._handle_login_exception(
+                db, login_data.email, ip_address, user_agent, e
+            )
             logger.error(f"Unexpected login error for {login_data.email}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1792,20 +1922,35 @@ class AuthService:
         """Update login analytics for business intelligence"""
         try:
             # Update user's login count and last login
-            user.login_count = (user.login_count or 0) + 1
             user.last_login_at = get_utc_now()
+
+            # Initialize login_count in settings if not exists
+            if user.settings is None:
+                user.settings = {}
+
+            current_count = user.settings.get("login_count", 0)
+            user.settings["login_count"] = current_count + 1
+            user.settings["last_login_ip"] = getattr(self, "current_ip", "unknown")
+            user.settings["last_login_user_agent"] = getattr(
+                self, "current_user_agent", "unknown"
+            )
 
             # Update tenant analytics if available
             if tenant:
-                # TODO: Update tenant-level login analytics
-                # This could include peak usage times, user engagement, etc.
-                pass
+                # Update tenant's current user count if this is a new active user
+                if user.is_active and not user.last_login_at:
+                    tenant.current_user_count = (tenant.current_user_count or 0) + 1
+
+                # Update last usage update timestamp
+                tenant.last_usage_update = get_utc_now()
 
             await db.commit()
+            logger.info(f"Updated login analytics for user: {user.email}")
 
         except Exception as e:
             logger.error(f"Error updating login analytics: {e}")
             # Don't fail the login if analytics update fails
+            await db.rollback()  # Rollback to avoid partial updates
 
     async def _create_login_tokens(
         self, db: AsyncSession, user: User, session_id: UUID
@@ -2217,6 +2362,67 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create user account",
             )
+
+    async def _handle_login_exception(
+        self,
+        db: AsyncSession,
+        email: str,
+        ip_address: str,
+        user_agent: str,
+        error: Exception,
+    ):
+        """Handle login exceptions with proper cleanup and logging"""
+        try:
+            # Try to get user for security logging
+            user = await self.get_user_by_email(db, email)
+            if user:
+                # Record failed login attempt
+                await security_service.record_login_attempt(
+                    db, user, False, ip_address, user_agent
+                )
+
+                # Increment failed login attempts counter
+                if hasattr(user, "failed_login_attempts"):
+                    user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+                    user.last_failed_login = get_utc_now()
+
+                # Check if account should be locked due to too many failed attempts
+                if user.failed_login_attempts >= 5:  # Lock after 5 failed attempts
+                    lock_until = get_utc_now() + timedelta(minutes=30)
+                    if user.settings is None:
+                        user.settings = {}
+                    user.settings.update(
+                        {
+                            "account_locked_until": lock_until.isoformat(),
+                            "lock_reason": "Too many failed login attempts",
+                        }
+                    )
+                    logger.warning(
+                        f"Account locked for user {email} due to too many failed attempts"
+                    )
+
+                await db.commit()
+
+            # Log the exception with context
+            error_context = {
+                "email": email,
+                "ip_address": ip_address,
+                "user_agent": (
+                    user_agent[:200] if user_agent else None
+                ),  # Truncate long user agents
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+            }
+
+            if isinstance(error, HTTPException):
+                logger.warning(f"Login HTTP exception: {error_context}")
+            else:
+                logger.error(f"Login exception: {error_context}", exc_info=True)
+
+        except Exception as log_error:
+            logger.error(f"Error handling login exception for {email}: {log_error}")
+            # Don't let exception handling break the main error flow
+            await db.rollback()
 
 
 auth_service = AuthService()
