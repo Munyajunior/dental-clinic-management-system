@@ -1,9 +1,9 @@
 # src/models/auth.py
 import uuid
-from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Text, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.sql import func
 from db.database import Base
 
@@ -46,7 +46,7 @@ class PasswordResetToken(Base):
 
     @property
     def is_expired(self) -> bool:
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
 
 
 class LoginAttempt(Base):
@@ -81,3 +81,54 @@ class SecurityEvent(Base):
 
     user = relationship("User")
     tenant = relationship("Tenant")
+
+
+class UserSession(Base):
+    """User session management for comprehensive session tracking"""
+
+    __tablename__ = "user_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+
+    # Session metadata
+    ip_address = Column(String(45), nullable=True)  # Support IPv6
+    user_agent = Column(Text, nullable=True)
+    device_info = Column(JSON, nullable=True)  # Store device fingerprint
+
+    # Session timing
+    login_time = Column(DateTime(timezone=True), nullable=False)
+    last_activity = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    # Session state
+    is_active = Column(Boolean, default=True, nullable=False)
+    logout_time = Column(DateTime(timezone=True), nullable=True)
+    logout_reason = Column(
+        String(100), nullable=True
+    )  # user_logout, expired, security_policy
+
+    # Security context
+    refresh_token_id = Column(
+        UUID(as_uuid=True), nullable=True
+    )  # Associated refresh token
+
+    # Relationships
+    tenant = relationship("Tenant")
+    user = relationship("User", back_populates="sessions")
+
+    def __repr__(self):
+        return f"<UserSession {self.id} for user {self.user_id}>"
+
+    @property
+    def is_expired(self) -> bool:
+        return datetime.now(timezone.utc) > self.expires_at
+
+    @property
+    def duration(self) -> timedelta:
+        """Get session duration"""
+        end_time = self.logout_time or datetime.now(timezone.utc)
+        return end_time - self.login_time
