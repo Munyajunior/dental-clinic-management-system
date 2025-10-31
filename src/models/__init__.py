@@ -17,7 +17,13 @@ from .prescription import Prescription
 from .invoice import Invoice, InvoiceItem, Payment
 from .newsletter import Newsletter, NewsletterSubscription
 from .settings import TenantSettings, SettingsAudit
-from .auth import RefreshToken, PasswordResetToken, LoginAttempt, SecurityEvent
+from .auth import (
+    RefreshToken,
+    PasswordResetToken,
+    LoginAttempt,
+    SecurityEvent,
+    UserSession,
+)
 
 # Now configure relationships that require cross-references
 from sqlalchemy.orm import configure_mappers, relationship
@@ -52,4 +58,5 @@ __all__ = [
     "PasswordResetToken",
     "LoginAttempt",
     "SecurityEvent",
+    "UserSession",
 ]
