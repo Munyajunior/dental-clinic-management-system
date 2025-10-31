@@ -41,9 +41,9 @@ class PasswordPolicyService:
         self.require_uppercase = True
         self.require_lowercase = True
         self.require_numbers = True
-        self.require_special_chars = True
-        self.max_age_days = 90  # Password expiration
-        self.history_size = 5  # Remember last 5 passwords
+        self.require_special_chars = False  # Make special chars optional
+        self.max_age_days = 180  # 6 months instead of 90 days (password expiration)
+        self.history_size = 3  # Remember last 3 passwords
 
     def validate_password_strength(self, password: str) -> Tuple[bool, List[str]]:
         """Validate password against enterprise policy"""
@@ -75,7 +75,7 @@ class PasswordPolicyService:
             )
 
         # Check entropy
-        if self.calculate_password_entropy(password) < 60:  # bits
+        if self.calculate_password_entropy(password) < 40:  # Reduced from 60 bits
             errors.append(
                 "Password is not complex enough. Please use a more varied combination of characters."
             )
@@ -132,8 +132,66 @@ class PasswordPolicyService:
             "iloveyou",
             "sunshine",
             "princess",
+            "1234",
+            "12345",
+            "1234567",
+            "111111",
+            "photoshop",
+            "123",
+            "123abc",
+            "aaa",
+            "abc",
+            "access",
+            "adobe",
+            "ashley",
+            "azerty",
+            "bailey",
+            "baseball",
+            "batman",
+            "charlie",
+            "donald",
+            "dragon",
+            "flower",
+            "football",
+            "freedom",
+            "hello",
+            "hottie",
+            "illustrator",
+            "jesus",
+            "letmein",
+            "login",
+            "lovely",
+            "michael",
+            "mustang",
+            "ninja",
+            "passw0rd",
+            "password",
+            "password1",
+            "photoshop",
+            "princess",
+            "qazwsx",
+            "qqww1122",
+            "shadow",
+            "solo",
+            "starwars",
+            "sunshine",
+            "superman",
+            "trustno1",
+            "welcome",
+            "whatever",
+            "zaq1zaq1",
         }
-        return password.lower() in common_passwords
+
+        # Also check simple variations
+        simple_variations = (
+            {f"{base}123" for base in common_passwords}
+            | {f"{base}!" for base in common_passwords}
+            | {f"{base}1" for base in common_passwords}
+        )
+
+        all_compromised = common_passwords | simple_variations
+
+        return password.lower() in all_compromised
 
     def calculate_password_entropy(self, password: str) -> float:
         """Calculate password entropy in bits"""
@@ -148,7 +206,7 @@ class PasswordPolicyService:
         if any(c.isdigit() for c in password):
             pool_size += 10
         if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
-            pool_size += 32  # Extended special characters
+            pool_size += 22  # Extended special characters
 
         if pool_size == 0:
             return 0
@@ -163,6 +221,30 @@ class PasswordPolicyService:
 
         password_age = datetime.utcnow() - user.updated_at
         return password_age.days > self.max_age_days
+
+    def get_password_guidelines(self) -> Dict[str, Any]:
+        """Get user-friendly password guidelines"""
+        return {
+            "min_length": self.min_length,
+            "requirements": [
+                "At least one uppercase letter",
+                "At least one lowercase letter",
+                "At least one number",
+                "Special characters are optional but recommended",
+            ],
+            "recommendations": [
+                "Use a mix of different character types",
+                "Avoid common words and personal information",
+                "Consider using a passphrase for better memorability",
+                "Don't reuse passwords from other services",
+            ],
+            "examples": [
+                "Summer2024!Clinic",
+                "GreenTea@September",
+                "OceanBreeze2024!",
+                "MyDentalClinic2024",
+            ],
+        }
 
 
 class TenantPaymentStatusService:
@@ -640,66 +722,93 @@ class AuthService:
     def create_access_token(
         self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None
     ) -> str:
-        to_encode = data.copy()
-        if expires_delta:
-            expire = datetime.utcnow() + expires_delta
-        else:
+        try:
+            to_encode = data.copy()
+            if expires_delta:
+                expire = datetime.utcnow() + expires_delta
+            else:
+                expire = datetime.utcnow() + timedelta(
+                    minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+                )
+
+            to_encode.update({"exp": expire, "type": "access"})
+            encoded_jwt = jwt.encode(
+                to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+            )
+            return encoded_jwt
+        except Exception as e:
+            logger.error(f"Failed to create access token: {str(e)}")
+            return None
+
+    def create_refresh_token(self, user_id: str) -> Tuple[str, UUID, UUID]:
+        """Create refresh token and store in database"""
+        try:
+            token_id = uuid4()
+            session_id = uuid4()
             expire = datetime.utcnow() + timedelta(
-                minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+                days=settings.REFRESH_TOKEN_EXPIRE_DAYS
             )
 
-        to_encode.update({"exp": expire, "type": "access"})
-        encoded_jwt = jwt.encode(
-            to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
-        )
-        return encoded_jwt
+            refresh_token_data = {
+                "jti": str(token_id),
+                "sub": str(user_id),
+                "exp": expire,
+                "type": "refresh",
+            }
 
-    def create_refresh_token(self, user_id: str) -> Tuple[str, UUID]:
-        """Create refresh token and store in database"""
-        token_id = uuid4()
-        expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-
-        refresh_token_data = {
-            "jti": str(token_id),
-            "sub": str(user_id),
-            "exp": expire,
-            "type": "refresh",
-        }
-
-        refresh_token = jwt.encode(
-            refresh_token_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM
-        )
-        return refresh_token, token_id
+            refresh_token = jwt.encode(
+                refresh_token_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+            )
+            return refresh_token, token_id, session_id
+        except Exception as e:
+            logger.error(f"Failed to create refresh token: {str(e)}")
+            return None, None, None
 
     async def store_refresh_token(
         self,
         db: AsyncSession,
-        token_id: str,
+        token_id: UUID,
         user_id: str,
         expires_at: datetime,
-        session_id: Optional[str] = None,
+        session_id: Optional[UUID] = None,
     ) -> None:
         """Enhanced refresh token storage with session management"""
-        refresh_token = RefreshToken(
-            id=UUID(token_id),
-            user_id=UUID(user_id),
-            expires_at=expires_at,
-            is_revoked=False,
-            session_id=UUID(session_id),
-            created_at=datetime.utcnow(),
-        )
-        db.add(refresh_token)
-        await db.commit()
+        try:
+            refresh_token = RefreshToken(
+                id=token_id,
+                user_id=user_id,
+                expires_at=expires_at,
+                is_revoked=False,
+                session_id=session_id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(refresh_token)
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to store refresh token: {str(e)}")
 
     async def revoke_refresh_token(self, db: AsyncSession, token_id: UUID) -> None:
         """Revoke a refresh token"""
-        await db.execute(delete(RefreshToken).where(RefreshToken.id == token_id))
+        result = await db.execute(
+            select(RefreshToken).where(RefreshToken.id == token_id)
+        )
+        refresh_token = result.scalars().first()
+        refresh_token.is_revoked = False
+
         await db.commit()
+        await db.flush()
+        await db.refresh(refresh_token)
 
     async def revoke_all_user_tokens(self, db: AsyncSession, user_id: UUID) -> None:
         """Revoke all refresh tokens for a user"""
-        await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user_id))
+        result = await db.execute(
+            select(RefreshToken).where(RefreshToken.user_id == user_id)
+        )
+        revoke_all_user_tokens = result.scalars().all()
+        revoke_all_user_tokens.is_revoked = True
         await db.commit()
+        await db.flush()
+        await db.refresh(revoke_all_user_tokens)
 
     async def verify_refresh_token(
         self, db: AsyncSession, token: str
@@ -809,10 +918,10 @@ class AuthService:
                 new_password
             )
             if not is_valid:
+                error_message = "Please check your password:\n• " + "\n• ".join(errors)
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Password does not meet security requirements: "
-                    + "; ".join(errors),
+                    detail=error_message,
                 )
 
             # Get user
@@ -820,6 +929,13 @@ class AuthService:
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+                )
+
+            # Check if password was recently used
+            if await self._is_password_in_history(db, user, new_password):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="You've used this password recently. Please choose a different one.",
                 )
 
             # Update password
@@ -845,6 +961,25 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update password",
             )
+
+    async def _is_password_in_history(
+        self, db: AsyncSession, user: User, new_password: str
+    ) -> bool:
+        """Check if password was recently used (more lenient)"""
+        if "password_history" not in user.settings:
+            return False
+
+        history = user.settings["password_history"]
+
+        # Only check the most recent password to avoid frustration
+        if history:
+            most_recent_hash = history[-1].get("password_hash")
+            if most_recent_hash and self.verify_password(
+                new_password, most_recent_hash
+            ):
+                return True
+
+        return False
 
     async def _update_password_history(
         self, db: AsyncSession, user: User, new_password: str
@@ -1238,7 +1373,7 @@ class AuthService:
             # First get the tenant by slug
             result = await db.execute(
                 select(Tenant).where(
-                    Tenant.slug == tenant_slug, Tenant.status != "cancelled"
+                    Tenant.slug == tenant_slug, Tenant.status == "active"
                 )
             )
             tenant = result.scalar_one_or_none()
@@ -1300,14 +1435,14 @@ class AuthService:
         )
 
         # Create and store refresh token with session context
-        refresh_token, token_id = self.create_refresh_token(str(user.id))
+        refresh_token, token_id, session_id = self.create_refresh_token(str(user.id))
         expires_at = datetime.utcnow() + timedelta(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
 
         # Store refresh token with session info
         await self.store_refresh_token(
-            db, str(token_id), getattr(user, "id"), expires_at, str(session_id)
+            db, token_id, getattr(user, "id"), expires_at, session_id
         )
 
         # Update user's last login
@@ -1385,20 +1520,27 @@ class AuthService:
     ):
         """Async function for sending tenant welcome email"""
 
-        async with AsyncSessionLocal() as db:
+        async with AsyncSessionLocal() as session:
             try:
-                result = await db.execute(select(User).where(User.id == user_id))
+                # Use a fresh session for the background task
+                result = await session.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
 
                 if not user:
                     logger.error(f"User not found for welcome email: {user_id}")
                     return
 
+                # Also get tenant info for the email
+                result = await session.execute(
+                    select(Tenant).where(Tenant.slug == tenant_slug)
+                )
+                tenant = result.scalar_one_or_none()
+
                 await email_service.send_tenant_welcome_email(
                     user_email=str(user.email),
                     user_name=f"{user.first_name} {user.last_name}",
                     temp_password=temp_password,
-                    tenant_slug=tenant_slug,
+                    tenant_slug=str(tenant.slug),
                 )
 
             except Exception as e:
@@ -1432,17 +1574,20 @@ class AuthService:
             await self.revoke_refresh_token(db, old_token_id)
 
             # Create new refresh token
-            new_refresh_token, new_token_id = self.create_refresh_token(str(user.id))
+            new_refresh_token, new_token_id, new_session_id = self.create_refresh_token(
+                str(user.id)
+            )
             expires_at = datetime.utcnow() + timedelta(
                 days=settings.REFRESH_TOKEN_EXPIRE_DAYS
             )
             await self.store_refresh_token(
-                db, str(new_token_id), str(user.id), expires_at
+                db, new_token_id, str(user.id), expires_at, new_session_id
             )
 
             return {
                 "access_token": access_token,
                 "refresh_token": new_refresh_token,
+                "session_id": new_session_id,
                 "token_type": "bearer",
             }
         else:
@@ -1557,6 +1702,7 @@ class AuthService:
 
         user = User(**user_data_dict)
         db.add(user)
+        await db.flush()
         await db.refresh(user)
 
         logger.info(f"Created new user: {user.email} in tenant: {user.tenant_id}")
