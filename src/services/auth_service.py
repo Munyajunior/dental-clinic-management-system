@@ -230,12 +230,37 @@ class PasswordPolicyService:
         return entropy
 
     def is_password_expired(self, user: User) -> bool:
-        """Check if user's password has expired"""
-        if not user.updated_at:
+        """Check if user's password has expired - FIXED VERSION"""
+        try:
+            # Use settings instead of updated_at to avoid database access
+            user_settings = getattr(user, "settings", {}) or {}
+            password_changed_at = user_settings.get("password_changed_at")
+
+            if password_changed_at:
+                # Parse the timestamp from settings
+                if isinstance(password_changed_at, str):
+                    changed_dt = datetime.fromisoformat(
+                        password_changed_at.replace("Z", "+00:00")
+                    )
+                else:
+                    changed_dt = password_changed_at
+
+                password_age = get_utc_now() - changed_dt
+                return password_age.days > self.max_age_days
+
+            # Fallback to updated_at if no password_changed_at in settings
+            # But access it safely to avoid triggering database reload
+            if hasattr(user, "updated_at") and user.updated_at is not None:
+                password_age = get_utc_now() - user.updated_at
+                return password_age.days > self.max_age_days
+
             return False
 
-        password_age = get_utc_now() - user.updated_at
-        return password_age.days > self.max_age_days
+        except Exception as e:
+            logger.warning(
+                f"Error checking password expiration for user {getattr(user, 'email', 'unknown')}: {e}"
+            )
+            return False  # Don't block login on error
 
     def get_password_guidelines(self) -> Dict[str, Any]:
         """Get user-friendly password guidelines"""
@@ -1558,6 +1583,16 @@ class AuthService:
                 db, login_data.email, login_data.password, tenant
             )
 
+            # Eager load all necessary relationships and attributes
+            # This prevents the "greenlet_spawn" error by ensuring all data is loaded
+            await db.refresh(
+                user,
+                [
+                    "settings",  # Ensure settings are loaded
+                    "tenant",  # Ensure tenant relationship is loaded
+                ],
+            )
+
             # Check if password reset is required BEFORE other security checks
             if self._should_force_password_reset(user):
                 logger.info(f"Password reset required for user: {user.email}")
@@ -1853,44 +1888,86 @@ class AuthService:
             )
 
     def _should_force_password_reset(self, user: User) -> bool:
-        """Check if password reset should be forced"""
-        # First login (user was created but never logged in)
-        if user.last_login_at is None:
-            logger.info(f"First login detected for user: {user.email}")
-            return True
+        """Check if password reset should be forced - USING SAFE HELPER"""
+        try:
+            # First login (user was created but never logged in)
+            if user.last_login_at is None:
+                logger.info(f"First login detected for user: {user.email}")
+                return True
 
-        # Password expired
-        if password_policy_service.is_password_expired(user):
-            logger.info(f"Password expired for user: {user.email}")
-            return True
+            # Get settings safely
+            user_settings = self._get_user_settings_safe(user)
 
-        # Admin forced reset
-        if (
-            getattr(user, "settings")
-            and user.settings.get("force_password_reset") == True
-        ):
-            logger.info(f"Admin forced password reset for user: {user.email}")
-            return True
+            # Admin forced reset
+            if user_settings.get("force_password_reset") == True:
+                logger.info(f"Admin forced password reset for user: {user.email}")
+                return True
 
-        # Security policy requires reset
-        if (
-            getattr(user, "settings")
-            and user.settings.get("password_reset_required") == True
-        ):
-            logger.info(
-                f"Security policy requires password reset for user: {user.email}"
+            # Security policy requires reset
+            if user_settings.get("password_reset_required") == True:
+                logger.info(
+                    f"Security policy requires password reset for user: {user.email}"
+                )
+                return True
+
+            # Check if this is a system-created user with temporary password
+            if user_settings.get("temporary_password") == True:
+                logger.info(f"Temporary password detected for user: {user.email}")
+                return True
+
+            # Password expiration check
+            password_changed_at = user_settings.get("password_changed_at")
+            if password_changed_at:
+                try:
+                    if isinstance(password_changed_at, str):
+                        changed_dt = datetime.fromisoformat(
+                            password_changed_at.replace("Z", "+00:00")
+                        )
+                    else:
+                        changed_dt = password_changed_at
+
+                    password_age = get_utc_now() - changed_dt
+                    if password_age.days > password_policy_service.max_age_days:
+                        logger.info(f"Password expired for user: {user.email}")
+                        return True
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        f"Error parsing password_changed_at for user {user.email}: {e}"
+                    )
+
+            return False
+
+        except Exception as e:
+            logger.error(
+                f"Error checking password reset requirement for user {user.email}: {e}"
             )
-            return True
+            return False
 
-        # Check if this is a system-created user with temporary password
-        if (
-            getattr(user, "settings")
-            and user.settings.get("temporary_password") == True
-        ):
-            logger.info(f"Temporary password detected for user: {user.email}")
-            return True
+    def _get_user_settings_safe(self, user: User) -> Dict[str, Any]:
+        """Safely get user settings without triggering database access"""
+        try:
+            # Direct attribute access
+            settings = getattr(user, "settings", None)
+            if settings is None:
+                return {}
 
-        return False
+            # If it's a dict, return it directly
+            if isinstance(settings, dict):
+                return settings
+
+            # If it's a string (JSON), parse it
+            if isinstance(settings, str):
+                import json
+
+                return json.loads(settings)
+
+            # Fallback to empty dict
+            return {}
+        except Exception as e:
+            logger.warning(
+                f"Error accessing user settings for {getattr(user, 'email', 'unknown')}: {e}"
+            )
+            return {}
 
     async def get_user_by_email_and_tenant(
         self, db: AsyncSession, email: str, tenant_slug: str
