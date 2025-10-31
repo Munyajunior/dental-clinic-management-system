@@ -36,7 +36,7 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 # Helper function for consistent UTC datetime
 def get_utc_now() -> datetime:
     """Get current UTC datetime with timezone awareness"""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc)
 
 
 def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -44,8 +44,8 @@ def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc).isoformat()
-    return dt.astimezone(timezone.utc).isoformat()
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 class PasswordPolicyService:
@@ -234,7 +234,7 @@ class PasswordPolicyService:
         if not user.updated_at:
             return False
 
-        password_age = datetime.utcnow() - user.updated_at
+        password_age = get_utc_now() - user.updated_at
         return password_age.days > self.max_age_days
 
     def get_password_guidelines(self) -> Dict[str, Any]:
@@ -275,7 +275,7 @@ class TenantPaymentStatusService:
         """
         Comprehensive tenant status checking for enterprise environment
         """
-        current_time = datetime.utcnow()
+        current_time = get_utc_now()
 
         # Status-based checks
         payment_status_checks = {
@@ -419,7 +419,7 @@ class TenantPaymentStatusService:
                     # Check if we're in grace period
                     if (
                         not tenant.grace_period_ends_at
-                        or tenant.grace_period_ends_at < datetime.utcnow()
+                        or tenant.grace_period_ends_at < get_utc_now()
                     ):
                         return (
                             False,
@@ -559,8 +559,8 @@ class SecurityService:
         # Check if account is locked
         if user.settings.get("account_locked_until"):
             lock_until = datetime.fromisoformat(user.settings["account_locked_until"])
-            if lock_until > datetime.utcnow():
-                remaining = lock_until - datetime.utcnow()
+            if lock_until > get_utc_now():
+                remaining = lock_until - get_utc_now()
                 return (
                     False,
                     f"Account temporarily locked. Try again in {remaining.seconds // 60} minutes.",
@@ -582,7 +582,7 @@ class SecurityService:
             select(func.count(LoginAttempt.id)).where(
                 LoginAttempt.user_id == user.id,
                 LoginAttempt.success == False,
-                LoginAttempt.attempted_at > datetime.utcnow() - timedelta(hours=1),
+                LoginAttempt.attempted_at > get_utc_now() - timedelta(hours=1),
             )
         )
         failure_count = recent_failures.scalar()
@@ -603,7 +603,7 @@ class SecurityService:
             success=success,
             ip_address=ip_address,
             user_agent=user_agent,
-            attempted_at=datetime.utcnow(),
+            attempted_at=get_utc_now(),
         )
         db.add(login_attempt)
 
@@ -619,7 +619,7 @@ class SecurityService:
             select(func.count(LoginAttempt.id)).where(
                 LoginAttempt.user_id == user.id,
                 LoginAttempt.success == False,
-                LoginAttempt.attempted_at > datetime.utcnow() - timedelta(minutes=30),
+                LoginAttempt.attempted_at > get_utc_now() - timedelta(minutes=30),
             )
         )
         failure_count = recent_failures.scalar()
@@ -630,12 +630,12 @@ class SecurityService:
 
     async def _lock_account(self, db: AsyncSession, user: User, reason: str):
         """Lock user account temporarily"""
-        lock_until = datetime.utcnow() + self.lockout_duration
+        lock_until = get_utc_now() + self.lockout_duration
 
         # Update user settings
         user_settings = user.settings or {}
         user_settings.update(
-            {"account_locked_until": lock_until.isoformat(), "lock_reason": reason}
+            {"account_locked_until": lock_until, "lock_reason": reason}
         )
 
         await db.execute(
@@ -666,10 +666,18 @@ class SessionManagementService:
         try:
             session_id = uuid4()
 
+            # Get user to retrieve tenant_id - this is the critical fix
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+
+            if not user:
+                raise ValueError(f"User not found: {user_id}")
+
             # Create session record
             session = UserSession(
                 id=session_id,
-                user_id=user_id,
+                user_id=user.id,
+                tenant_id=user.tenant_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
                 device_info=device_info or {},
@@ -687,8 +695,8 @@ class SessionManagementService:
 
             return session_id, {
                 "session_id": str(session_id),
-                "login_time": session.login_time.isoformat(),
-                "expires_at": session.expires_at.isoformat(),
+                "login_time": session.login_time,
+                "expires_at": session.expires_at,
                 "ip_address": ip_address,
             }
 
@@ -811,8 +819,8 @@ class SessionManagementService:
                     "session_id": str(session.id),
                     "ip_address": session.ip_address,
                     "user_agent": session.user_agent,
-                    "login_time": session.login_time.isoformat(),
-                    "last_activity": session.last_activity.isoformat(),
+                    "login_time": session.login_time,
+                    "last_activity": session.last_activity,
                     "device_info": session.device_info,
                 }
                 for session in sessions
@@ -1001,8 +1009,25 @@ class AuthService:
     ) -> None:
         """Enhanced refresh token storage with session management"""
         try:
+            # Get user to retrieve tenant_id
+            user = await self.user_service.get(db, UUID(user_id))
+            if not user:
+                raise ValueError(f"User not found: {user_id}")
+
+            # Get session to ensure it exists and has tenant_id
+            result = await db.execute(
+                select(UserSession).where(UserSession.id == session_id)
+            )
+            session = result.scalar_one_or_none()
+
+            if not session:
+                raise ValueError(f"Session not found: {session_id}")
+
+            # Use session's tenant_id (which should match user's tenant_id)
+
             refresh_token = RefreshToken(
                 id=token_id,
+                tenant_id=session.tenant_id,
                 user_id=user_id,
                 expires_at=ensure_utc(expires_at),
                 is_revoked=False,
@@ -1147,15 +1172,57 @@ class AuthService:
 
     def can_user_do_enforced_reset(self, user: User) -> bool:
         """Check if user can perform enforced password reset"""
+        # Handle None settings
+        user_settings = user.settings or {}
+
         # Allow enforced reset for:
         # 1. First login (last_login_at is None)
         # 2. Password reset required flag is set
         # 3. Admin has forced password reset
-        return (
+        # 4. Temporary password flag is set
+        if (
             user.last_login_at is None
-            or user.settings.get("force_password_reset", False)
-            or user.settings.get("password_reset_required", False)
-        )
+            or user_settings.get("force_password_reset") == True
+            or user_settings.get("password_reset_required") == True
+            or user_settings.get("temporary_password") == True
+        ):
+            return True
+        return False
+
+    async def verify_password_reset_requirements_cleared(
+        self, db: AsyncSession, user_id: UUID
+    ) -> bool:
+        """Verify that password reset requirements have been cleared"""
+        try:
+            user = await self.user_service.get(db, user_id)
+            if not user:
+                return False
+
+            user_settings = user.settings or {}
+
+            # Check if any reset flags are still set
+            reset_flags = [
+                "force_password_reset",
+                "password_reset_required",
+                "temporary_password",
+                "require_reauthentication",
+            ]
+
+            for flag in reset_flags:
+                if user_settings.get(flag):
+                    logger.warning(
+                        f"Reset flag still set for user {user_id}: {flag} = {user_settings[flag]}"
+                    )
+                    return False
+
+            logger.info(
+                f"All password reset requirements cleared for user: {user.email}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Error verifying reset requirements for user {user_id}: {e}")
+            return False
 
     async def update_user_password(
         self,
@@ -1247,25 +1314,34 @@ class AuthService:
         self, db: AsyncSession, user: User, new_password: str
     ):
         """Update password history for security"""
-        # Initialize password history if not exists
-        if "password_history" not in user.settings:
-            user.settings["password_history"] = []
+        try:
+            # Initialize password history if not exists
+            if "password_history" not in user.settings:
+                user.settings["password_history"] = []
 
-        # Add current password to history (limit to last 5 passwords)
-        history = user.settings["password_history"]
-        history.append(
-            {
-                "password_hash": user.hashed_password,  # Store the old hash before update
-                "changed_at": datetime.utcnow().isoformat(),
-            }
-        )
+            # Add current password to history (limit to last 5 passwords)
+            history = user.settings["password_history"]
+            history.append(
+                {
+                    "password_hash": user.hashed_password,  # Store the old hash before update
+                    "changed_at": get_utc_now(),
+                }
+            )
 
-        # Keep only last 5 passwords
-        if len(history) > 5:
-            history.pop(0)
+            # Keep only last 5 passwords
+            if len(history) > 5:
+                history.pop(0)
 
-        user.settings["password_history"] = history
-        user.settings["password_changed_at"] = datetime.utcnow().isoformat()
+            user.settings["password_history"] = history
+            user.settings["password_changed_at"] = get_utc_now()
+
+            await db.commit()
+            await db.refresh(user)
+            logger.info(f"Password history updated for user: {user.email}")
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to update password history: {e}")
 
     async def clear_password_reset_requirements(self, db: AsyncSession, user_id: UUID):
         """Clear password reset requirements after successful reset"""
@@ -1273,6 +1349,10 @@ class AuthService:
             user = await self.user_service.get(db, user_id)
             if not user:
                 return
+
+            # Initialize settings if None
+            if user.settings is None:
+                user.settings = {}
 
             # Clear all reset flags
             reset_flags = [
@@ -1288,7 +1368,12 @@ class AuthService:
 
             # Update last login if it's the first time
             if user.last_login_at is None:
-                user.last_login_at = datetime.utcnow()
+                user.last_login_at = get_utc_now()
+
+            # Mark settings as modified to ensure SQLAlchemy detects the change
+            user.settings = dict(
+                user.settings
+            )  # Create a new dict to trigger change detection
 
             await db.commit()
             logger.info(f"Cleared password reset requirements for user: {user.email}")
@@ -1650,19 +1735,28 @@ class AuthService:
             return True
 
         # Admin forced reset
-        if user.settings and user.settings.get("force_password_reset"):
+        if (
+            getattr(user, "settings")
+            and user.settings.get("force_password_reset") == True
+        ):
             logger.info(f"Admin forced password reset for user: {user.email}")
             return True
 
         # Security policy requires reset
-        if user.settings and user.settings.get("password_reset_required"):
+        if (
+            getattr(user, "settings")
+            and user.settings.get("password_reset_required") == True
+        ):
             logger.info(
                 f"Security policy requires password reset for user: {user.email}"
             )
             return True
 
         # Check if this is a system-created user with temporary password
-        if user.settings and user.settings.get("temporary_password"):
+        if (
+            getattr(user, "settings")
+            and user.settings.get("temporary_password") == True
+        ):
             logger.info(f"Temporary password detected for user: {user.email}")
             return True
 
@@ -1699,7 +1793,7 @@ class AuthService:
         try:
             # Update user's login count and last login
             user.login_count = (user.login_count or 0) + 1
-            user.last_login_at = datetime.utcnow()
+            user.last_login_at = get_utc_now()
 
             # Update tenant analytics if available
             if tenant:
@@ -1717,8 +1811,6 @@ class AuthService:
         self, db: AsyncSession, user: User, session_id: UUID
     ) -> Dict[str, str]:
         """Create secure login tokens with session management"""
-        # Generate session ID
-        session_id = uuid4()
 
         # Create access token with enhanced claims
         access_token = self.create_access_token(
@@ -1728,7 +1820,7 @@ class AuthService:
                 "role": user.role,
                 "tenant_id": str(user.tenant_id),
                 "session_id": str(session_id),
-                "login_time": get_utc_now().isoformat(),
+                "login_time": get_utc_now(),
                 "auth_method": "password",
             },
             session_id=session_id,
@@ -2097,7 +2189,7 @@ class AuthService:
             user_data_dict["settings"] = user_data_dict.get("settings", {})
             user_data_dict["settings"].update(
                 {
-                    "password_changed_at": datetime.now(timezone.utc).isoformat(),
+                    "password_changed_at": get_utc_now(),
                     "login_count": 0,
                     "account_locked_until": None,
                     "temporary_password": True,
