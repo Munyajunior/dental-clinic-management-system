@@ -18,6 +18,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum as PyEnum
 from db.database import Base
+from datetime import datetime, timezone
 
 
 class GenderEnum(str, PyEnum):
@@ -116,9 +117,20 @@ class User(Base):
     )
 
     def __init__(self, **kwargs):
-        # Ensure settings is always a dict
+        # Ensure settings is always a dict and has required fields
         if "settings" not in kwargs or kwargs["settings"] is None:
             kwargs["settings"] = {}
+
+        # Initialize required settings fields if not present
+        settings = kwargs["settings"]
+        if "password_changed_at" not in settings:
+            settings["password_changed_at"] = datetime.now(timezone.utc).isoformat()
+        if "login_count" not in settings:
+            settings["login_count"] = 0
+        if "temporary_password" not in settings:
+            settings["temporary_password"] = True  # Default for new users
+
+        kwargs["settings"] = settings
         super().__init__(**kwargs)
 
     @property
@@ -128,17 +140,19 @@ class User(Base):
 
     @property
     def requires_password_reset(self) -> bool:
-        """Check if user requires password reset"""
-        if not self.settings:
-            return False
-        return any(
-            [
-                self.settings.get("force_password_reset"),
-                self.settings.get("password_reset_required"),
-                self.settings.get("temporary_password"),
-                self.last_login_at is None,  # First login
-            ]
-        )
+        """Safe property to check if user requires password reset"""
+        try:
+            settings = self.settings or {}
+            return any(
+                [
+                    settings.get("force_password_reset"),
+                    settings.get("password_reset_required"),
+                    settings.get("temporary_password"),
+                    self.last_login_at is None,  # First login
+                ]
+            )
+        except Exception:
+            return False  # Safe fallback
 
     def set_profile_picture(self, image_data: bytes, content_type: str):
         """Store profile picture in the database."""
