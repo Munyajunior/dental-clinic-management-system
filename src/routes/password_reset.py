@@ -232,14 +232,14 @@ async def enforced_password_reset_by_slug(
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found in specified clinic",
+                detail="User not found in specified clinic. Please check your email and clinic name.",
             )
 
         # Verify this is an allowed enforced reset scenario
         if not auth_service.can_user_do_enforced_reset(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Enforced password reset not allowed for this user",
+                detail="Password reset not allowed for this user. Please contact your administrator.",
             )
 
         # Update password
@@ -257,13 +257,11 @@ async def enforced_password_reset_by_slug(
         expires_at = datetime.utcnow() + timedelta(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
-        await auth_service.store_refresh_token(
-            db, str(token_id), str(user.id), expires_at
-        )
+        await auth_service.store_refresh_token(db, token_id, str(user.id), expires_at)
 
         return PasswordResetResponse(
             success=True,
-            message="Password reset successfully",
+            message="Password reset successfully. You can now access your account.",
             access_token=access_token,
             refresh_token=refresh_token,
             user=UserPublic.from_orm(user),
@@ -275,7 +273,7 @@ async def enforced_password_reset_by_slug(
         logger.error(f"Enforced password reset failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to reset password",
+            detail="An unexpected error occurred while resetting your password. Please try again.",
         )
 
 
