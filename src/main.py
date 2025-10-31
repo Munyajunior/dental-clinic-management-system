@@ -43,6 +43,7 @@ from routes import (
     settings_router,
     password_reset_router,
     public_router,
+    sessions_router,
 )
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
@@ -231,6 +232,7 @@ app.include_router(dashboard_router, prefix=settings.API_PREFIX)
 app.include_router(settings_router, prefix=settings.API_PREFIX)
 app.include_router(password_reset_router, prefix=settings.API_PREFIX)
 app.include_router(public_router, prefix=settings.API_PREFIX)
+app.include_router(sessions_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
