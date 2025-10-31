@@ -113,12 +113,15 @@ class UserLogin(BaseSchema):
 
 
 class UserLoginResponse(BaseSchema):
-    """User login response"""
+    """Enhanced user login response with session info"""
 
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
-    user: UserPublic
-    tenant: dict
+    user: "UserPublic"
+    tenant: Optional[Dict[str, Any]] = None
+    session_id: str
+    password_reset_required: bool = False
 
 
 class UserPasswordChange(BaseSchema):
@@ -159,3 +162,9 @@ class UserWorkSchedule(BaseSchema):
     friday: List[str] = []
     saturday: List[str] = []
     sunday: List[str] = []
+
+
+class TokenRefresh(BaseSchema):
+    """Token refresh request schema"""
+
+    refresh_token: str
