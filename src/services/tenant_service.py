@@ -85,7 +85,10 @@ class TenantService(BaseService):
 
             # Now commit both tenant and user together
             await db.commit()
+
+            # Refresh both objects to ensure they're fully loaded
             await db.refresh(tenant)
+            await db.refresh(admin_user)
 
             logger.info(
                 f"Created tenant {tenant.name} with admin user {admin_user.email}"
