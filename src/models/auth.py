@@ -13,17 +13,37 @@ class RefreshToken(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    session_id = Column(
+        UUID(as_uuid=True), ForeignKey("user_sessions.id"), nullable=True
     )
-    session_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+
+    # Token metadata
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_revoked = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # Security fields
+    ip_address = Column(String(45), nullable=True)  # IPv6 support
+    user_agent = Column(Text, nullable=True)
+
     # Relationships
-    tenant = relationship("Tenant")
     user = relationship("User", back_populates="refresh_tokens")
+    tenant = relationship("Tenant")
+    session = relationship("UserSession", back_populates="refresh_tokens")
+
+    def __repr__(self):
+        return f"<RefreshToken {self.id} for user {self.user_id}>"
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if token is expired"""
+        return datetime.now(timezone.utc) > self.expires_at
+
+    @property
+    def is_valid(self) -> bool:
+        """Check if token is valid (not expired and not revoked)"""
+        return not self.is_expired and not self.is_revoked
 
 
 class PasswordResetToken(Base):
@@ -119,6 +139,7 @@ class UserSession(Base):
     # Relationships
     tenant = relationship("Tenant")
     user = relationship("User", back_populates="sessions")
+    refresh_tokens = relationship("RefreshToken", back_populates="session")
 
     def __repr__(self):
         return f"<UserSession {self.id} for user {self.user_id}>"
