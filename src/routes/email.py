@@ -10,10 +10,18 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, Any
+from pydantic import EmailStr
 from uuid import UUID
 
 from db.database import get_db
-from schemas.email_schemas import EmailRequest, BulkEmailRequest, EmailResponse
+from schemas.email_schemas import (
+    EmailRequest,
+    BulkEmailRequest,
+    EmailResponse,
+    HealthCheckResponse,
+    TestEmailRequest,
+    TestEmailResponse,
+)
 from services.email_service import email_service
 from services.email_integration_service import email_integration_service
 from services.appointment_service import appointment_service
@@ -305,4 +313,156 @@ async def get_email_stats(
             "welcome_email": 25,
             "invoice": 20,
         },
+    }
+
+
+# Testing
+@router.get("/health", response_model=HealthCheckResponse)
+async def email_health_check():
+    """Check email service health and connectivity"""
+    connectivity = await email_service.check_connectivity()
+    health_verification = await email_service.verify_service_health()
+
+    # Count available templates
+    template_health = health_verification.get("template_health", {})
+    available_templates = sum(
+        1 for template in template_health.values() if template.get("exists", False)
+    )
+
+    return HealthCheckResponse(
+        service="resend",
+        status=health_verification.get("service_status", "unknown"),
+        dns_resolution=connectivity.get("dns_resolution", False),
+        api_key_configured=health_verification.get("configuration", {}).get(
+            "api_key_configured", False
+        ),
+        templates_available=available_templates,
+        consecutive_failures=connectivity.get("consecutive_failures", 0),
+        last_success=connectivity.get("last_success"),
+        details=health_verification,
+    )
+
+
+@router.post("/test", response_model=TestEmailResponse)
+async def send_test_email(
+    test_request: TestEmailRequest, background_tasks: BackgroundTasks
+):
+    """Send a test email to verify email service functionality"""
+    try:
+        logger.info(f"Received test email request for {test_request.email}")
+
+        # Send test email
+        response = await email_service.send_test_email(
+            to_email=test_request.email, test_type=test_request.test_type
+        )
+
+        if response.success:
+            return TestEmailResponse(
+                success=True,
+                message=f"Test email sent successfully to {test_request.email}",
+                test_id=response.message_id,
+                details={
+                    "recipient": test_request.email,
+                    "test_type": test_request.test_type,
+                    "message_id": response.message_id,
+                    "service_used": "resend",
+                },
+            )
+        else:
+            return TestEmailResponse(
+                success=False,
+                message="Failed to send test email",
+                error=response.error,
+                details={
+                    "recipient": test_request.email,
+                    "test_type": test_request.test_type,
+                    "error_details": response.error,
+                },
+            )
+
+    except Exception as e:
+        logger.error(f"Test email endpoint failed: {e}")
+        return TestEmailResponse(
+            success=False,
+            message="Internal server error during test email",
+            error=str(e),
+        )
+
+
+@router.post("/test-bulk")
+async def send_bulk_test_emails(
+    emails: list[EmailStr], background_tasks: BackgroundTasks
+):
+    """Send test emails to multiple addresses"""
+    results = []
+
+    for email in emails:
+        try:
+            response = await email_service.send_test_email(
+                to_email=email, test_type="bulk_test"
+            )
+
+            results.append(
+                {
+                    "email": email,
+                    "success": response.success,
+                    "message_id": response.message_id if response.success else None,
+                    "error": response.error if not response.success else None,
+                }
+            )
+
+        except Exception as e:
+            results.append({"email": email, "success": False, "error": str(e)})
+
+    return {
+        "total_emails": len(emails),
+        "successful": sum(1 for r in results if r["success"]),
+        "failed": sum(1 for r in results if not r["success"]),
+        "results": results,
+    }
+
+
+@router.get("/test/templates")
+async def list_email_templates_testing():
+    """List all available email templates and their status"""
+    health_verification = await email_service.verify_service_health()
+    template_health = health_verification.get("template_health", {})
+
+    return {
+        "total_templates": len(template_health),
+        "available_templates": [
+            {
+                "type": template_type,
+                "template_name": details["template"],
+                "subject": details["subject"],
+                "exists": details["exists"],
+            }
+            for template_type, details in template_health.items()
+            if details["exists"]
+        ],
+        "missing_templates": [
+            {
+                "type": template_type,
+                "template_name": details["template"],
+                "subject": details["subject"],
+            }
+            for template_type, details in template_health.items()
+            if not details["exists"]
+        ],
+    }
+
+
+@router.get("/configuration")
+async def get_email_configuration():
+    """Get current email service configuration (without sensitive data)"""
+    health_verification = await email_service.verify_service_health()
+    config = health_verification.get("configuration", {})
+
+    return {
+        "from_email": config.get("from_email"),
+        "from_name": config.get("from_name"),
+        "send_emails_enabled": config.get("send_emails_enabled"),
+        "log_emails_enabled": config.get("log_emails_enabled"),
+        "api_key_configured": config.get("api_key_configured"),
+        "service_status": health_verification.get("service_status"),
     }
