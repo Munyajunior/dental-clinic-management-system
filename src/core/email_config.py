@@ -9,7 +9,7 @@ load_dotenv()
 class EmailSettings(BaseSettings):
     """Email configuration settings"""
 
-    RESEND_API_KEY: str = "re_6bb4txSc_9XSA5K74U3W2Ktry8BnA7yJC"
+    RESEND_API_KEY: str = "re_EaW98Bgf_52R1dJDc2JfK2ahPnVqLzdZs"
     FROM_EMAIL: EmailStr = "noreply@kwantabit.com"
     FROM_NAME: str = "Dental Clinic Management System"
     SUPPORT_EMAIL: EmailStr = "support@kwantabit.com"
