@@ -11,7 +11,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from db.database import get_db, get_db_session
 from schemas.password_reset_schemas import (
     PasswordResetRequest,
@@ -149,12 +149,16 @@ async def complete_password_reset(
     description="Reset password for enforced scenarios (first login, admin requirement)",
 )
 async def enforced_password_reset(
+    request: Request,
     user_id: UUID,
     reset_data: EnforcedPasswordReset = Body(...),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Enforced password reset endpoint"""
     try:
+        client_ip = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent", "unknown")
+
         # Get user by ID
         user = await auth_service.user_service.get(db, user_id)
         if not user:
@@ -182,17 +186,31 @@ async def enforced_password_reset(
         # Clear any password reset flags
         await auth_service.clear_password_reset_requirements(db, user_id)
 
-        # Create new tokens since this is essentially a new login
-        access_token = auth_service.create_access_token(
-            data={"sub": str(user.id), "email": user.email, "role": user.role}
+        session_id, session_data = (
+            await auth_service.session_service.create_user_session(
+                db, user.id, client_ip, user_agent
+            )
         )
 
-        refresh_token, token_id = auth_service.create_refresh_token(str(user.id))
-        expires_at = datetime.utcnow() + timedelta(
+        # Create new tokens since this is essentially a new login
+        access_token = auth_service.create_access_token(
+            data={
+                "sub": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "tenant_id": str(user.tenant_id),
+            },
+            session_id=session_id,
+        )
+
+        refresh_token, token_id = auth_service.create_refresh_token(
+            str(user.id), session_id
+        )
+        expires_at = datetime.now(timezone.utc) + timedelta(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
         await auth_service.store_refresh_token(
-            db, str(token_id), str(user.id), expires_at
+            db, token_id, str(user.id), expires_at, session_id
         )
 
         return PasswordResetResponse(
@@ -220,57 +238,130 @@ async def enforced_password_reset(
     description="Reset password for enforced scenarios (first login, admin requirement)",
 )
 async def enforced_password_reset_by_slug(
+    request: Request,
     reset_data: EnforcedPasswordReset = Body(...),
     db: AsyncSession = Depends(get_db_session),  # Use system session
 ) -> Any:
     """Enforced password reset endpoint that doesn't require tenant context"""
     try:
+        client_ip = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent", "unknown")
+
+        logger.info(
+            f"Enforced password reset attempt for: {reset_data.email} in tenant: {reset_data.tenant_slug}"
+        )
+
         # Get user by email and tenant slug
         user = await auth_service.get_user_by_email_and_tenant(
             db, reset_data.email, reset_data.tenant_slug
         )
         if not user:
+            logger.warning(
+                f"User not found: {reset_data.email} in tenant: {reset_data.tenant_slug}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found in specified clinic. Please check your email and clinic name.",
             )
 
+        logger.info(
+            f"Found user: {user.email} (ID: {user.id}), reset flags: {user.settings}"
+        )
+
         # Verify this is an allowed enforced reset scenario
         if not auth_service.can_user_do_enforced_reset(user):
+            logger.warning(
+                f"Enforced reset not allowed for user: {user.email}, settings: {user.settings}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Password reset not allowed for this user. Please contact your administrator.",
             )
 
         # Update password
-        await auth_service.update_user_password(db, user.id, reset_data.new_password)
+        logger.info(f"Updating password for user: {user.email}")
+        await auth_service.update_user_password(
+            db, getattr(user, "id"), reset_data.new_password
+        )
 
-        # Clear any password reset flags
-        await auth_service.clear_password_reset_requirements(db, user.id)
+        # Clear any password reset flags - with enhanced debugging
+        logger.info(
+            f"Clearing password reset requirements for user: {user.email}, current settings: {user.settings}"
+        )
+        await auth_service.clear_password_reset_requirements(db, getattr(user, "id"))
+
+        # Verify the settings were cleared
+        await db.refresh(user)
+        logger.info(f"After clearing requirements - user settings: {user.settings}")
+
+        # Verify the requirements were actually cleared
+        requirements_cleared = (
+            await auth_service.verify_password_reset_requirements_cleared(
+                db, getattr(user, "id")
+            )
+        )
+        if not requirements_cleared:
+            logger.error(
+                f"Password reset requirements were not properly cleared for user: {user.email}"
+            )
+
+        # Create session and tokens
+        session_id, session_data = (
+            await auth_service.session_service.create_user_session(
+                db, getattr(user, "id"), client_ip, user_agent
+            )
+        )
 
         # Create new tokens since this is essentially a new login
         access_token = auth_service.create_access_token(
-            data={"sub": str(user.id), "email": user.email, "role": user.role}
+            data={"sub": str(user.id), "email": user.email, "role": user.role},
+            session_id=session_id,
         )
 
-        refresh_token, token_id = auth_service.create_refresh_token(str(user.id))
-        expires_at = datetime.utcnow() + timedelta(
+        refresh_token, token_id = auth_service.create_refresh_token(
+            str(user.id), session_id
+        )
+        expires_at = datetime.now(timezone.utc) + timedelta(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
-        await auth_service.store_refresh_token(db, token_id, str(user.id), expires_at)
+        await auth_service.store_refresh_token(
+            db, token_id, str(user.id), expires_at, session_id
+        )
+
+        # Convert user to UserPublic safely
+        user_public = UserPublic(
+            id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            email=user.email,
+            contact_number=user.contact_number,
+            role=user.role,
+            specialization=user.specialization,
+            is_active=user.is_active,
+            is_available=user.is_available,
+            profile_picture=(
+                user.get_profile_picture_base64()
+                if hasattr(user, "get_profile_picture_base64")
+                else None
+            ),
+        )
+
+        logger.info(
+            f"Enforced password reset completed successfully for user: {user.email}"
+        )
 
         return PasswordResetResponse(
             success=True,
             message="Password reset successfully. You can now access your account.",
             access_token=access_token,
             refresh_token=refresh_token,
-            user=UserPublic.from_orm(user),
+            user=user_public,
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Enforced password reset failed: {e}")
+        logger.error(f"Enforced password reset failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while resetting your password. Please try again.",
