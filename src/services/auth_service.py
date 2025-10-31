@@ -1,10 +1,10 @@
-# src/services/auth_service.py (Enhanced)
-from datetime import datetime, timedelta
+# src/services/auth_service.py
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple, List
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, and_, func, update
-from fastapi import HTTPException, status, Depends, BackgroundTasks
+from fastapi import HTTPException, status, Depends, BackgroundTasks, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -31,6 +31,21 @@ logger = setup_logger("AUTH_SERVICE")
 
 security = HTTPBearer()
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+
+
+# Helper function for consistent UTC datetime
+def get_utc_now() -> datetime:
+    """Get current UTC datetime with timezone awareness"""
+    return datetime.now(timezone.utc)
+
+
+def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Ensure datetime is UTC timezone aware"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 class PasswordPolicyService:
@@ -632,10 +647,212 @@ class SecurityService:
         # TODO: Send security alert email
 
 
+class SessionManagementService:
+    """Comprehensive session management for enterprise security"""
+
+    def __init__(self):
+        self.session_timeout = timedelta(hours=24)  # Session timeout
+        self.refresh_token_rotation = True
+
+    async def create_user_session(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        ip_address: str = None,
+        user_agent: str = None,
+        device_info: Dict[str, Any] = None,
+    ) -> Tuple[UUID, Dict[str, Any]]:
+        """Create a new user session with comprehensive tracking"""
+        try:
+            session_id = uuid4()
+
+            # Create session record
+            session = UserSession(
+                id=session_id,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                device_info=device_info or {},
+                login_time=get_utc_now(),
+                last_activity=get_utc_now(),
+                expires_at=get_utc_now() + self.session_timeout,
+                is_active=True,
+            )
+
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            logger.info(f"Created new session {session_id} for user {user_id}")
+
+            return session_id, {
+                "session_id": str(session_id),
+                "login_time": session.login_time.isoformat(),
+                "expires_at": session.expires_at.isoformat(),
+                "ip_address": ip_address,
+            }
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to create user session: {str(e)}")
+            raise
+
+    async def validate_session(
+        self, db: AsyncSession, session_id: UUID, user_id: UUID
+    ) -> bool:
+        """Validate session is active and belongs to user"""
+        try:
+            result = await db.execute(
+                select(UserSession).where(
+                    UserSession.id == session_id,
+                    UserSession.user_id == user_id,
+                    UserSession.is_active == True,
+                    UserSession.expires_at > get_utc_now(),
+                )
+            )
+            session = result.scalar_one_or_none()
+
+            if session:
+                # Update last activity
+                session.last_activity = get_utc_now()
+                await db.commit()
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Session validation error: {str(e)}")
+            return False
+
+    async def revoke_session(
+        self,
+        db: AsyncSession,
+        session_id: UUID,
+        user_id: UUID = None,
+        reason: str = "user_logout",
+    ) -> bool:
+        """Revoke a specific session"""
+        try:
+            query = select(UserSession).where(UserSession.id == session_id)
+            if user_id:
+                query = query.where(UserSession.user_id == user_id)
+
+            result = await db.execute(query)
+            session = result.scalar_one_or_none()
+
+            if session:
+                session.is_active = False
+                session.logout_time = get_utc_now()
+                session.logout_reason = reason
+                await db.commit()
+                logger.info(f"Revoked session {session_id}, reason: {reason}")
+                return True
+
+            return False
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to revoke session: {str(e)}")
+            return False
+
+    async def revoke_all_user_sessions(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        exclude_session_id: UUID = None,
+        reason: str = "security_policy",
+    ) -> int:
+        """Revoke all sessions for a user (except optionally one)"""
+        try:
+            query = select(UserSession).where(
+                UserSession.user_id == user_id, UserSession.is_active == True
+            )
+
+            if exclude_session_id:
+                query = query.where(UserSession.id != exclude_session_id)
+
+            result = await db.execute(query)
+            sessions = result.scalars().all()
+
+            revoked_count = 0
+            for session in sessions:
+                session.is_active = False
+                session.logout_time = get_utc_now()
+                session.logout_reason = reason
+                revoked_count += 1
+
+            await db.commit()
+            logger.info(f"Revoked {revoked_count} sessions for user {user_id}")
+            return revoked_count
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to revoke user sessions: {str(e)}")
+            return 0
+
+    async def get_active_sessions(
+        self, db: AsyncSession, user_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Get all active sessions for a user"""
+        try:
+            result = await db.execute(
+                select(UserSession)
+                .where(
+                    UserSession.user_id == user_id,
+                    UserSession.is_active,
+                    UserSession.expires_at > get_utc_now(),
+                )
+                .order_by(UserSession.last_activity.desc())
+            )
+            sessions = result.scalars().all()
+
+            return [
+                {
+                    "session_id": str(session.id),
+                    "ip_address": session.ip_address,
+                    "user_agent": session.user_agent,
+                    "login_time": session.login_time.isoformat(),
+                    "last_activity": session.last_activity.isoformat(),
+                    "device_info": session.device_info,
+                }
+                for session in sessions
+            ]
+
+        except Exception as e:
+            logger.error(f"Failed to get active sessions: {str(e)}")
+            return []
+
+    async def cleanup_expired_sessions(self, db: AsyncSession) -> int:
+        """Clean up expired sessions"""
+        try:
+            result = await db.execute(
+                select(UserSession).where(
+                    UserSession.expires_at <= get_utc_now(), UserSession.is_active
+                )
+            )
+            expired_sessions = result.scalars().all()
+
+            cleaned_count = 0
+            for session in expired_sessions:
+                session.is_active = False
+                session.logout_reason = "expired"
+                cleaned_count += 1
+
+            await db.commit()
+            logger.info(f"Cleaned up {cleaned_count} expired sessions")
+            return cleaned_count
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to cleanup expired sessions: {str(e)}")
+            return 0
+
+
 # Initialize services
 password_policy_service = PasswordPolicyService()
 tenant_status_service = TenantPaymentStatusService()
 security_service = SecurityService()
+session_service = SessionManagementService()
 
 
 class AuthService:
@@ -720,18 +937,28 @@ class AuthService:
         return password.lower() in common_passwords
 
     def create_access_token(
-        self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None
+        self,
+        data: Dict[str, Any],
+        expires_delta: Optional[timedelta] = None,
+        session_id: Optional[UUID] = None,
     ) -> str:
         try:
             to_encode = data.copy()
             if expires_delta:
-                expire = datetime.utcnow() + expires_delta
+                expire = get_utc_now() + expires_delta
             else:
-                expire = datetime.utcnow() + timedelta(
+                expire = get_utc_now() + timedelta(
                     minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
                 )
 
-            to_encode.update({"exp": expire, "type": "access"})
+            to_encode.update(
+                {
+                    "exp": expire,
+                    "type": "access",
+                    "iat": get_utc_now(),  # issued at
+                    "session_id": str(session_id) if session_id else None,
+                }
+            )
             encoded_jwt = jwt.encode(
                 to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
             )
@@ -740,29 +967,28 @@ class AuthService:
             logger.error(f"Failed to create access token: {str(e)}")
             return None
 
-    def create_refresh_token(self, user_id: str) -> Tuple[str, UUID, UUID]:
-        """Create refresh token and store in database"""
+    def create_refresh_token(self, user_id: str, session_id: UUID) -> Tuple[str, UUID]:
+        """Create refresh token with session context and store in database"""
         try:
             token_id = uuid4()
-            session_id = uuid4()
-            expire = datetime.utcnow() + timedelta(
-                days=settings.REFRESH_TOKEN_EXPIRE_DAYS
-            )
+            expire = get_utc_now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
             refresh_token_data = {
                 "jti": str(token_id),
                 "sub": str(user_id),
                 "exp": expire,
                 "type": "refresh",
+                "session_id": str(session_id),
+                "iat": get_utc_now(),
             }
 
             refresh_token = jwt.encode(
                 refresh_token_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM
             )
-            return refresh_token, token_id, session_id
+            return refresh_token, token_id
         except Exception as e:
             logger.error(f"Failed to create refresh token: {str(e)}")
-            return None, None, None
+            return None, None
 
     async def store_refresh_token(
         self,
@@ -770,22 +996,23 @@ class AuthService:
         token_id: UUID,
         user_id: str,
         expires_at: datetime,
-        session_id: Optional[UUID] = None,
+        session_id: UUID,
     ) -> None:
         """Enhanced refresh token storage with session management"""
         try:
             refresh_token = RefreshToken(
                 id=token_id,
                 user_id=user_id,
-                expires_at=expires_at,
+                expires_at=ensure_utc(expires_at),
                 is_revoked=False,
                 session_id=session_id,
-                created_at=datetime.utcnow(),
+                created_at=get_utc_now(),
             )
             db.add(refresh_token)
             await db.commit()
         except Exception as e:
             logger.error(f"Failed to store refresh token: {str(e)}")
+            await db.rollback()
 
     async def revoke_refresh_token(self, db: AsyncSession, token_id: UUID) -> None:
         """Revoke a refresh token"""
@@ -812,7 +1039,7 @@ class AuthService:
 
     async def verify_refresh_token(
         self, db: AsyncSession, token: str
-    ) -> Optional[User]:
+    ) -> Tuple[Optional[User], Optional[UUID]]:
         """Verify refresh token and return user"""
         try:
             payload = jwt.decode(
@@ -827,6 +1054,7 @@ class AuthService:
 
             token_id = UUID(payload.get("jti"))
             user_id = UUID(payload.get("sub"))
+            session_id = UUID(payload.get("session_id"))
 
             # Check if token exists and is not revoked
             result = await db.execute(
@@ -834,7 +1062,7 @@ class AuthService:
                     RefreshToken.id == token_id,
                     RefreshToken.user_id == user_id,
                     RefreshToken.is_revoked == False,
-                    RefreshToken.expires_at > datetime.utcnow(),
+                    RefreshToken.expires_at > get_utc_now(),
                 )
             )
             refresh_token = result.scalar_one_or_none()
@@ -845,6 +1073,14 @@ class AuthService:
                     detail="Invalid refresh token",
                 )
 
+            # Verify session is still valid
+            if not await session_service.validate_session(db, session_id, user_id):
+                await self.revoke_refresh_token(db, token_id)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Session expired",
+                )
+
             # Get user
             user = await self.user_service.get(db, user_id)
             if not user or not user.is_active:
@@ -853,7 +1089,7 @@ class AuthService:
                     detail="User not found or inactive",
                 )
 
-            return user
+            return user, session_id
 
         except JWTError:
             raise HTTPException(
@@ -909,7 +1145,11 @@ class AuthService:
         )
 
     async def update_user_password(
-        self, db: AsyncSession, user_id: UUID, new_password: str
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        new_password: str,
+        revoke_other_sessions: bool = True,
     ) -> User:
         """Update user password with security logging"""
         try:
@@ -940,10 +1180,19 @@ class AuthService:
 
             # Update password
             user.hashed_password = self.get_password_hash(new_password)
-            user.updated_at = datetime.utcnow()
+            user.updated_at = get_utc_now()
 
             # Update password history and settings
             await self._update_password_history(db, user, new_password)
+
+            # Revoke other sessions for security (optional)
+            if revoke_other_sessions:
+                await session_service.revoke_all_user_sessions(
+                    db, user_id, reason="password_change"
+                )
+                logger.info(
+                    f"Revoked all sessions for user {user_id} after password change"
+                )
 
             await db.commit()
             await db.refresh(user)
@@ -1055,6 +1304,7 @@ class AuthService:
         login_data: UserLogin,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
+        request: Optional[Request] = None,
     ) -> Dict[str, Any]:
         """Enterprise-grade login with comprehensive security checks"""
         try:
@@ -1120,8 +1370,14 @@ class AuthService:
                     detail="User does not belong to the specified clinic",
                 )
 
-            # Create session and tokens
-            tokens = await self._create_login_tokens(db, user)
+            # Create user session
+            device_info = self._extract_device_info(request)
+            session_id, session_data = await session_service.create_user_session(
+                db, user.id, ip_address, user_agent, device_info
+            )
+
+            # Create tokens with session context
+            tokens = await self._create_login_tokens(db, user, session_id)
 
             # Record successful login
             await security_service.record_login_attempt(
@@ -1132,7 +1388,7 @@ class AuthService:
             await self._update_login_analytics(db, user, tenant)
 
             logger.info(
-                f"Successful login for user: {user.email} from IP: {ip_address}"
+                f"Successful login for user: {user.email} from IP: {ip_address}, session: {session_id}"
             )
 
             return {
@@ -1151,7 +1407,8 @@ class AuthService:
                     if tenant or hasattr(user, "tenant")
                     else None
                 ),
-                "session_id": tokens["session_id"],
+                "session_id": str(session_id),
+                "session_data": session_data,
                 "password_reset_required": self._should_force_password_reset(user),
             }
 
@@ -1203,6 +1460,39 @@ class AuthService:
         # TODO: Implement IP-based rate limiting
 
         return errors
+
+    def _extract_device_info(self, request: Optional[Request]) -> Dict[str, Any]:
+        """Extract device information from request"""
+        if not request:
+            return {}
+
+        try:
+            user_agent = request.headers.get("user-agent", "")
+            return {
+                "user_agent": user_agent,
+                "accept_language": request.headers.get("accept-language"),
+                "accept_encoding": request.headers.get("accept-encoding"),
+                "platform": self._detect_platform(user_agent),
+            }
+        except Exception as e:
+            logger.warning(f"Could not extract device info: {e}")
+            return {}
+
+    def _detect_platform(self, user_agent: str) -> str:
+        """Detect platform from user agent"""
+        user_agent = user_agent.lower()
+        if "windows" in user_agent:
+            return "windows"
+        elif "mac" in user_agent:
+            return "macos"
+        elif "linux" in user_agent:
+            return "linux"
+        elif "android" in user_agent:
+            return "android"
+        elif "iphone" in user_agent or "ipad" in user_agent:
+            return "ios"
+        else:
+            return "unknown"
 
     async def _validate_tenant_for_login(
         self, db: AsyncSession, tenant_slug: Optional[str]
@@ -1415,7 +1705,7 @@ class AuthService:
             # Don't fail the login if analytics update fails
 
     async def _create_login_tokens(
-        self, db: AsyncSession, user: User
+        self, db: AsyncSession, user: User, session_id: UUID
     ) -> Dict[str, str]:
         """Create secure login tokens with session management"""
         # Generate session ID
@@ -1429,24 +1719,23 @@ class AuthService:
                 "role": user.role,
                 "tenant_id": str(user.tenant_id),
                 "session_id": str(session_id),
-                "login_time": datetime.utcnow().isoformat(),
+                "login_time": get_utc_now().isoformat(),
                 "auth_method": "password",
-            }
+            },
+            session_id=session_id,
         )
 
         # Create and store refresh token with session context
-        refresh_token, token_id, session_id = self.create_refresh_token(str(user.id))
-        expires_at = datetime.utcnow() + timedelta(
-            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
-        )
+        refresh_token, token_id = self.create_refresh_token(str(user.id), session_id)
+        expires_at = get_utc_now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
         # Store refresh token with session info
         await self.store_refresh_token(
             db, token_id, getattr(user, "id"), expires_at, session_id
         )
 
-        # Update user's last login
-        user.last_login_at = datetime.utcnow()
+        # Update user's last login with UTC time
+        user.last_login_at = get_utc_now()
         await db.commit()
 
         # Eager load relationships
@@ -1551,8 +1840,8 @@ class AuthService:
     async def refresh_tokens(
         self, db: AsyncSession, refresh_token: str
     ) -> Dict[str, Any]:
-        """Refresh access token using refresh token"""
-        user = await self.verify_refresh_token(db, refresh_token)
+        """Refresh access token using refresh token with session management"""
+        user, session_id = await self.verify_refresh_token(db, refresh_token)
 
         if not user:
             raise HTTPException(
@@ -1561,10 +1850,17 @@ class AuthService:
 
         # Create new access token
         access_token = self.create_access_token(
-            data={"sub": str(user.id), "email": user.email, "role": user.role}
+            data={
+                "sub": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "tenant_id": str(user.tenant_id),
+                "session_id": str(session_id),
+            },
+            session_id=session_id,
         )
 
-        # Optionally rotate refresh token (for better security)
+        # Token rotation for security
         if settings.REFRESH_TOKEN_ROTATION:
             # Revoke old token
             payload = jwt.decode(
@@ -1574,46 +1870,118 @@ class AuthService:
             await self.revoke_refresh_token(db, old_token_id)
 
             # Create new refresh token
-            new_refresh_token, new_token_id, new_session_id = self.create_refresh_token(
-                str(user.id)
+            new_refresh_token, new_token_id = self.create_refresh_token(
+                str(user.id), session_id
             )
-            expires_at = datetime.utcnow() + timedelta(
+            expires_at = get_utc_now() + timedelta(
                 days=settings.REFRESH_TOKEN_EXPIRE_DAYS
             )
             await self.store_refresh_token(
-                db, new_token_id, str(user.id), expires_at, new_session_id
+                db, new_token_id, str(user.id), expires_at, session_id
             )
 
             return {
                 "access_token": access_token,
                 "refresh_token": new_refresh_token,
-                "session_id": new_session_id,
                 "token_type": "bearer",
+                "session_id": str(session_id),
             }
         else:
-            return {"access_token": access_token, "token_type": "bearer"}
+            return {
+                "access_token": access_token,
+                "token_type": "bearer",
+                "session_id": str(session_id),
+            }
 
-    async def logout(self, db: AsyncSession, refresh_token: str) -> None:
-        """Logout user by revoking refresh token"""
+    async def logout(
+        self,
+        db: AsyncSession,
+        refresh_token: str = None,
+        session_id: UUID = None,
+        user_id: UUID = None,
+    ) -> Dict[str, Any]:
+        """Comprehensive logout with session management"""
         try:
-            payload = jwt.decode(
-                refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-            )
-            token_id = UUID(payload.get("jti"))
-            await self.revoke_refresh_token(db, token_id)
-        except JWTError:
-            # Token is invalid anyway, so consider it logged out
-            pass
+            result = {"sessions_revoked": 0, "tokens_revoked": 0}
 
-    async def logout_all(self, db: AsyncSession, user_id: UUID) -> None:
-        """Logout user from all devices"""
-        await self.revoke_all_user_tokens(db, user_id)
+            # If refresh token provided, revoke it and get session info
+            if refresh_token:
+                try:
+                    payload = jwt.decode(
+                        refresh_token,
+                        settings.SECRET_KEY,
+                        algorithms=[settings.ALGORITHM],
+                    )
+                    token_id = UUID(payload.get("jti"))
+                    session_id = UUID(payload.get("session_id"))
+                    user_id = UUID(payload.get("sub"))
+
+                    await self.revoke_refresh_token(db, token_id)
+                    result["tokens_revoked"] += 1
+
+                except JWTError:
+                    logger.warning("Invalid refresh token during logout")
+
+            # Revoke specific session if provided
+            if session_id and user_id:
+                if await session_service.revoke_session(
+                    db, session_id, user_id, "user_logout"
+                ):
+                    result["sessions_revoked"] += 1
+
+            # If no specific session, revoke all user sessions
+            elif user_id:
+                revoked_count = await session_service.revoke_all_user_sessions(
+                    db, user_id, reason="user_logout"
+                )
+                result["sessions_revoked"] = revoked_count
+
+                # Also revoke all refresh tokens
+                await self.revoke_all_user_tokens(db, user_id)
+                result["tokens_revoked"] = revoked_count  # Estimate
+
+            logger.info(f"Logout completed: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Logout error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Logout failed",
+            )
+
+    async def logout_all(self, db: AsyncSession, user_id: UUID) -> Dict[str, Any]:
+        """Logout user from all devices with session management"""
+        try:
+            # Revoke all sessions
+            sessions_revoked = await session_service.revoke_all_user_sessions(
+                db, user_id, reason="security_policy"
+            )
+
+            # Revoke all refresh tokens
+            await self.revoke_all_user_tokens(db, user_id)
+
+            result = {
+                "sessions_revoked": sessions_revoked,
+                "tokens_revoked": sessions_revoked,  # Estimate
+                "message": f"Logged out from {sessions_revoked} devices",
+            }
+
+            logger.info(f"Force logout completed for user {user_id}: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Force logout error for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to logout from all devices",
+            )
 
     async def get_current_user(
         self,
         db: AsyncSession = Depends(get_db),
         credentials: HTTPAuthorizationCredentials = Depends(security),
-    ) -> User:
+    ) -> Tuple[User, UUID]:
         credentials_exception = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -1631,8 +1999,11 @@ class AuthService:
                 raise credentials_exception
 
             user_id: str = payload.get("sub")
-            if user_id is None:
+            session_id: str = payload.get("session_id")
+
+            if user_id is None or session_id is None:
                 raise credentials_exception
+
         except JWTError:
             raise credentials_exception
 
@@ -1645,7 +2016,13 @@ class AuthService:
                 status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
             )
 
-        return user
+        # Validate session
+        if not await session_service.validate_session(db, UUID(session_id), user.id):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
+            )
+
+        return user, UUID(session_id)
 
     async def create_user(
         self, db: AsyncSession, user_data: UserCreate, tenant_id: Optional[str] = None
