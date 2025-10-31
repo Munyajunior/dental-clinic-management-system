@@ -1,9 +1,10 @@
 # src/services/password_reset_service.py
-from fastapi import BackgroundTasks
+from core.email_config import email_settings
+from fastapi import BackgroundTasks, HTTPException
 import asyncio
 import secrets
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,10 +13,9 @@ from db.database import AsyncSessionLocal
 from models.user import User
 from models.auth import PasswordResetToken
 from services.email_service import email_service
-from services.auth_service import auth_service, password_policy_service
+from services.auth_service import auth_service
 from utils.url_scheme_handler import URLSchemeHandler
 from schemas.email_schemas import EmailType
-from core.email_config import email_settings
 from utils.logger import setup_logger
 
 logger = setup_logger("PASSWORD_RESET_SERVICE")
@@ -106,7 +106,7 @@ class PasswordResetService:
             result = await db.execute(
                 select(PasswordResetToken).where(
                     PasswordResetToken.token == token,
-                    PasswordResetToken.expires_at > datetime.utcnow(),
+                    PasswordResetToken.expires_at > datetime.now(timezone.utc),
                     PasswordResetToken.is_used == False,
                 )
             )
@@ -117,24 +117,17 @@ class PasswordResetService:
 
             # Get user
             user = await db.get(User, reset_token.user_id)
-            if not user or not user.is_active:
+            if not user or not getattr(user, "is_active"):
                 return {"success": False, "error": "User not found or inactive"}
 
-            # Validate password with reasonable requirements
-            is_valid, errors = password_policy_service.validate_password_strength(
-                new_password
+            # Use auth_service to update password (handles security properly)
+            await auth_service.update_user_password(
+                db, getattr(user, "id"), new_password, revoke_other_sessions=True
             )
-            if not is_valid:
-                return {
-                    "success": False,
-                    "error": "Password does not meet requirements: "
-                    + "; ".join(errors),
-                }
 
-            # Update password
-            user.hashed_password = auth_service.get_password_hash(new_password)
-            reset_token.is_used = True
-            reset_token.used_at = datetime.utcnow()
+            # Mark token as used
+            setattr(reset_token, "is_used", True)
+            setattr(reset_token, "used_at", datetime.now(timezone.utc).isoformat())
 
             await db.commit()
 
@@ -146,6 +139,9 @@ class PasswordResetService:
             logger.info(f"Password reset completed for user: {user.email}")
             return {"success": True, "user_id": user.id}
 
+        except HTTPException as e:
+            await db.rollback()
+            return {"success": False, "error": e.detail}
         except Exception as e:
             await db.rollback()
             logger.error(f"Password reset completion failed: {e}")
@@ -203,7 +199,7 @@ class PasswordResetService:
 
                 response = await email_service.send_templated_email(
                     EmailType.PASSWORD_RESET,
-                    to=[user.email],
+                    to=[getattr(user, "email")],
                     template_data=template_data,
                 )
 
