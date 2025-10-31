@@ -164,3 +164,4 @@ cython_debug/
 /.venv
 venv/
 docker-compose.override.yml
+/.vscode
