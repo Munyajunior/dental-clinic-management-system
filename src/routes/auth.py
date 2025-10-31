@@ -13,7 +13,7 @@ from schemas.auth_schemas import (
     RefreshTokenRequest,
     LogoutRequest,
     LogoutResponse,
-    TokenResponse,
+    TokenRefreshResponse,
 )
 from services.auth_service import auth_service
 from utils.rate_limiter import limiter
@@ -41,24 +41,10 @@ async def login(
         user_agent = request.headers.get("user-agent", "unknown")
 
         result = await auth_service.login(
-            db, login_data, ip_address=client_ip, user_agent=user_agent
+            db, login_data, ip_address=client_ip, user_agent=user_agent, request=request
         )
 
-        # Build response with tenant info
-        user_public = UserPublic.from_orm(result["user"])
-
-        response_data = {
-            "access_token": result["access_token"],
-            "refresh_token": result["refresh_token"],
-            "token_type": "bearer",
-            "user": user_public,
-        }
-
-        # Add tenant info if available
-        if "tenant" in result and result["tenant"]:
-            response_data["tenant"] = result["tenant"]
-
-        return response_data
+        return UserLoginResponse(**result)
 
     except HTTPException:
         raise
@@ -72,7 +58,7 @@ async def login(
 
 @router.post(
     "/refresh",
-    response_model=TokenResponse,
+    response_model=TokenRefreshResponse,
     summary="Refresh tokens",
     description="Refresh access token using refresh token. Implements token rotation for security.",
 )
@@ -83,7 +69,7 @@ async def refresh_tokens(
     """Refresh tokens endpoint with secure token rotation"""
     try:
         result = await auth_service.refresh_tokens(db, refresh_data.refresh_token)
-        return result
+        return TokenRefreshResponse(**result)
     except HTTPException:
         raise
     except Exception as e:
@@ -124,8 +110,20 @@ async def logout(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> LogoutResponse:
     """User logout endpoint"""
-    await auth_service.logout(db, logout_data.refresh_token)
-    return LogoutResponse(message="Successfully logged out")
+    try:
+        user, session_id = current_user  # Unpack tuple from get_current_user
+        result = await auth_service.logout(
+            db=db,
+            refresh_token=logout_data.refresh_token,
+            session_id=session_id,
+            user_id=user.id,
+        )
+        return LogoutResponse(message="Successfully logged out")
+    except Exception as e:
+        logger.error(f"Logout error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
+        )
 
 
 @router.post(
@@ -139,8 +137,17 @@ async def logout_all(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> LogoutResponse:
     """Logout from all devices endpoint"""
-    await auth_service.logout_all(db, current_user.id)
-    return LogoutResponse(message="Successfully logged out from all devices")
+    try:
+        user, _ = current_user  # Unpack tuple, ignore session_id for logout-all
+        result = await auth_service.logout_all(db, user.id)
+        return LogoutResponse(message="Successfully logged out from all devices")
+        return {"success": True, **result}
+    except Exception as e:
+        logger.error(f"Logout all error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to logout from all devices",
+        )
 
 
 @router.get(
