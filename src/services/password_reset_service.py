@@ -12,7 +12,7 @@ from db.database import AsyncSessionLocal
 from models.user import User
 from models.auth import PasswordResetToken
 from services.email_service import email_service
-from services.auth_service import auth_service
+from services.auth_service import auth_service, password_policy_service
 from utils.url_scheme_handler import URLSchemeHandler
 from schemas.email_schemas import EmailType
 from core.email_config import email_settings
@@ -119,6 +119,17 @@ class PasswordResetService:
             user = await db.get(User, reset_token.user_id)
             if not user or not user.is_active:
                 return {"success": False, "error": "User not found or inactive"}
+
+            # Validate password with reasonable requirements
+            is_valid, errors = password_policy_service.validate_password_strength(
+                new_password
+            )
+            if not is_valid:
+                return {
+                    "success": False,
+                    "error": "Password does not meet requirements: "
+                    + "; ".join(errors),
+                }
 
             # Update password
             user.hashed_password = auth_service.get_password_hash(new_password)
