@@ -44,7 +44,15 @@ async def login(
             db, login_data, ip_address=client_ip, user_agent=user_agent, request=request
         )
 
-        return UserLoginResponse(**result)
+        return UserLoginResponse(
+            access_token=result["access_token"],
+            refresh_token=result["refresh_token"],
+            token_type=result["token_type"],
+            user=UserPublic.from_orm(result["user"]),
+            tenant=result.get("tenant"),
+            session_id=result["session_id"],
+            password_reset_required=result.get("password_reset_required", False),
+        )
 
     except HTTPException:
         raise
@@ -69,7 +77,19 @@ async def refresh_tokens(
     """Refresh tokens endpoint with secure token rotation"""
     try:
         result = await auth_service.refresh_tokens(db, refresh_data.refresh_token)
-        return TokenRefreshResponse(**result)
+
+        response_data = {
+            "access_token": result["access_token"],
+            "token_type": result["token_type"],
+            "session_id": result.get("session_id"),
+        }
+
+        # Include refresh_token only if provided (token rotation)
+        if "refresh_token" in result:
+            response_data["refresh_token"] = result["refresh_token"]
+
+        return TokenRefreshResponse(**response_data)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -102,11 +122,11 @@ async def register(
     "/logout",
     response_model=LogoutResponse,
     summary="User logout",
-    description="Logout user by revoking refresh token",
+    description="Logout user by revoking refresh token and session",
 )
 async def logout(
     logout_data: LogoutRequest = Body(...),
-    db: AsyncSession = Depends(get_db),  # TENANT session
+    db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> LogoutResponse:
     """User logout endpoint"""
@@ -118,7 +138,14 @@ async def logout(
             session_id=session_id,
             user_id=user.id,
         )
-        return LogoutResponse(message="Successfully logged out")
+
+        return LogoutResponse(
+            success=True,
+            message="Successfully logged out",
+            sessions_revoked=result.get("sessions_revoked", 0),
+            tokens_revoked=result.get("tokens_revoked", 0),
+        )
+
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
         raise HTTPException(
@@ -130,18 +157,24 @@ async def logout(
     "/logout-all",
     response_model=LogoutResponse,
     summary="Logout all devices",
-    description="Logout user from all devices by revoking all refresh tokens",
+    description="Logout user from all devices by revoking all refresh tokens and sessions",
 )
 async def logout_all(
-    db: AsyncSession = Depends(get_db),  # TENANT session
+    db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> LogoutResponse:
     """Logout from all devices endpoint"""
     try:
         user, _ = current_user  # Unpack tuple, ignore session_id for logout-all
         result = await auth_service.logout_all(db, user.id)
-        return LogoutResponse(message="Successfully logged out from all devices")
-        return {"success": True, **result}
+
+        return LogoutResponse(
+            success=True,
+            message=result.get("message", "Successfully logged out from all devices"),
+            sessions_revoked=result.get("sessions_revoked", 0),
+            tokens_revoked=result.get("tokens_revoked", 0),
+        )
+
     except Exception as e:
         logger.error(f"Logout all error: {str(e)}")
         raise HTTPException(
@@ -157,9 +190,15 @@ async def logout_all(
     description="Get current authenticated user information",
 )
 async def get_current_user(
-    current_user: Any = Depends(
-        auth_service.get_current_user
-    ),  # Uses get_db internally
+    current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """Get current user endpoint - requires tenant context"""
-    return UserPublic.from_orm(current_user)
+    try:
+        user, _ = current_user
+        return UserPublic.from_orm(user)
+    except Exception as e:
+        logger.error(f"Get current user error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not retrieve user information",
+        )
