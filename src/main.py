@@ -322,7 +322,7 @@ async def list_tenants():
         }
 
 
-@app.get("api/v2/email/simple/health")
+@app.get("/api/v2/health/email")
 async def email_health_check():
     """Check email service health and connectivity"""
     connectivity = await email_service.check_connectivity()
