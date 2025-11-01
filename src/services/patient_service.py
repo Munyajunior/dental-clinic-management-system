@@ -21,42 +21,79 @@ class PatientService(BaseService):
         self, db: AsyncSession, patient_data: PatientCreate, created_by: UUID
     ) -> Patient:
         """Create new patient"""
-        # Check if patient with email already exists
-        if patient_data.email:
-            result = await db.execute(
-                select(Patient).where(
-                    Patient.email == patient_data.email,
-                    Patient.tenant_id == patient_data.tenant_id,
+        try:
+            logger.debug(f"Creating patient with data: {patient_data}")
+            # Check if patient with email already exists
+            if patient_data.email:
+                result = await db.execute(
+                    select(Patient).where(
+                        Patient.email == patient_data.email,
+                        Patient.tenant_id == patient_data.tenant_id,
+                    )
                 )
+                existing_patient = result.scalar_one_or_none()
+                if existing_patient:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Patient with this email already exists",
+                    )
+
+            patient_dict = patient_data.model_dump()
+            patient_dict["created_by"] = created_by
+            # DEBUG: Check what we're creating
+            logger.debug(f"Patient dict before creation: {patient_dict}")
+
+            patient = Patient(**patient_dict)
+            # DEBUG: Check the patient object before adding to session
+            logger.debug(f"Patient object created: {patient}")
+            logger.debug(f"Patient object type: {type(patient)}")
+            logger.debug(f"Patient ID: {getattr(patient, 'id', 'NO ID')}")
+            logger.debug(
+                f"Patient tenant_id: {getattr(patient, 'tenant_id', 'NO TENANT ID')}"
             )
-            existing_patient = result.scalar_one_or_none()
-            if existing_patient:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Patient with this email already exists",
-                )
+            db.add(patient)
 
-        patient_dict = patient_data.dict()
-        patient_dict["created_by"] = created_by
+            # DEBUG: Check session state before flush
+            logger.debug("About to flush session...")
+            await db.flush()
 
-        patient = Patient(**patient_dict)
-        db.add(patient)
-        await db.commit()
-        await db.refresh(patient)
+            # DEBUG: Check patient after flush
+            logger.debug(f"Patient after flush - ID: {patient.id}")
+            logger.debug(f"Patient after flush - full object: {patient}")
 
-        logger.info(f"Created new patient: {patient.first_name} {patient.last_name}")
-        return patient
+            await db.commit()
+            await db.refresh(patient)
+
+            logger.info(
+                f"Created new patient: {patient.first_name} {patient.last_name}"
+            )
+            return patient
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to create patient: {e}", exc_info=True)
+
+            # Additional debugging for tuple error
+            if "'tuple' object has no attribute 'id'" in str(e):
+                logger.error("TUPLE ERROR IN PATIENT CREATION!")
+                # Check if patient is a tuple
+                if "patient" in locals() and isinstance(patient, tuple):
+                    logger.error(f"Patient became a tuple: {patient}")
+
+            raise
 
     async def search_patients(
         self,
         db: AsyncSession,
         search_params: PatientSearch,
+        tenant_id: UUID,
         skip: int = 0,
         limit: int = 50,
     ) -> List[Patient]:
         """Search patients with various filters"""
         try:
-            query = select(Patient).where(Patient.is_active)
+            query = select(Patient).where(
+                Patient.status == PatientStatus.ACTIVE, Patient.tenant_id == tenant_id
+            )
 
             # Text search
             if search_params.query:
