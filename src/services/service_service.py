@@ -326,7 +326,7 @@ class ServiceService(BaseService):
                 )
             )
 
-            revenue_data = revenue_result.first()
+            revenue_data = revenue_result.scalar_one_or_none()
 
             total_revenue = revenue_data.total_revenue or Decimal("0.00")
             total_treatments = revenue_data.total_treatments or 0
