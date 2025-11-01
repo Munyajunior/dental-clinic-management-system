@@ -74,10 +74,10 @@ async def get_current_user(
         # Get user from appropriate table based on role
         if role == "patient":
             result = await db.execute(select(Patient).where(Patient.id == user_id))
-            user = result.scalars().first()
+            user = result.scalar_one_or_none()
         else:
             result = await db.execute(select(User).where(User.id == user_id))
-            user = result.scalars().first()
+            user = result.scalar_one_or_none()
 
         if not user:
             logger.warning(f"User not found in database: {user_id}")
