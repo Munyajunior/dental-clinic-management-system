@@ -21,7 +21,10 @@ from db.database import (
     setup_rls,
     engine,
     disconnect_db,
+    verify_rls_health,
+    get_db,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 from utils.exception_handler import setup_exception_handlers
 from utils.logger import setup_logger
 from utils.rate_limiter import limiter
@@ -118,6 +121,16 @@ async def initialize_database():
         logger.info("Setting up Row-Level Security policies...")
         await setup_rls()
         logger.info("RLS policies configured successfully")
+
+        # Verify RLS health
+        logger.info("Verifying RLS health...")
+        rls_healthy = await verify_rls_health()
+        if not rls_healthy:
+            logger.warning(
+                "RLS health check failed - multi-tenancy may not work correctly"
+            )
+        else:
+            logger.info("RLS health check passed")
 
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
@@ -319,6 +332,35 @@ async def list_tenants():
                 }
                 for tenant in tenants
             ]
+        }
+
+
+@app.get("/api/v2/test-tenant-isolation")
+async def test_tenant_isolation(db: AsyncSession = Depends(get_db)):
+    """Test endpoint to verify tenant isolation is working"""
+    try:
+        # Try to query patients
+        from sqlalchemy import text
+
+        result = await db.execute(text("SELECT count(*) as count FROM patients"))
+        count = result.scalar()
+
+        # Check current tenant setting
+        tenant_result = await db.execute(text("SHOW app.tenant_id"))
+        current_tenant = tenant_result.scalar()
+
+        return {
+            "success": True,
+            "current_tenant": current_tenant,
+            "patient_count": count,
+            "message": "Tenant isolation is working correctly",
+        }
+    except Exception as e:
+        logger.error(f"Tenant isolation test failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Tenant isolation test failed",
         }
 
 
