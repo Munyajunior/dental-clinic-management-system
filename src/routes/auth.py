@@ -1,7 +1,8 @@
 # src/routes/auth.py (Enhanced)
 from fastapi import APIRouter, Depends, status, HTTPException, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
+from typing import Any, Tuple
+from uuid import UUID
 from db.database import get_db, get_db_session
 from schemas.user_schemas import (
     UserLogin,
@@ -15,6 +16,7 @@ from schemas.auth_schemas import (
     LogoutResponse,
     TokenRefreshResponse,
 )
+from models.user import User
 from services.auth_service import auth_service
 from utils.rate_limiter import limiter
 from utils.logger import setup_logger
@@ -71,7 +73,7 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenRefreshResponse,
-    summary="Refresh tokens",
+    summary="Refresh access tokens",
     description="Refresh access token using refresh token. Implements token rotation for security.",
 )
 async def refresh_tokens(
@@ -131,16 +133,20 @@ async def register(
 async def logout(
     logout_data: LogoutRequest = Body(...),
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(auth_service.get_current_user),
+    current_user: Tuple[User, UUID] = Depends(
+        auth_service.get_current_user_and_session
+    ),
 ) -> LogoutResponse:
     """User logout endpoint"""
     try:
-        user, session_id = current_user  # Unpack tuple from get_current_user
+        user, session_id = (
+            current_user  # Unpack tuple from get_current_user_and_session
+        )
         result = await auth_service.logout(
             db=db,
             refresh_token=logout_data.refresh_token,
             session_id=session_id,
-            user_id=user.id,
+            user_id=getattr(user, "id"),
         )
 
         return LogoutResponse(
@@ -165,12 +171,14 @@ async def logout(
 )
 async def logout_all(
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(auth_service.get_current_user),
+    current_user: Tuple[User, UUID] = Depends(
+        auth_service.get_current_user_and_session
+    ),
 ) -> LogoutResponse:
     """Logout from all devices endpoint"""
     try:
         user, _ = current_user  # Unpack tuple, ignore session_id for logout-all
-        result = await auth_service.logout_all(db, user.id)
+        result = await auth_service.logout_all(db, getattr(user, "id"))
 
         return LogoutResponse(
             success=True,
@@ -198,8 +206,7 @@ async def get_current_user(
 ) -> Any:
     """Get current user endpoint - requires tenant context"""
     try:
-        user, _ = current_user
-        return UserPublic.from_orm(user)
+        return UserPublic.from_orm(current_user)
     except Exception as e:
         logger.error(f"Get current user error: {e}")
         raise HTTPException(
