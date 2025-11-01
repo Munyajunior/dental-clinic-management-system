@@ -25,6 +25,25 @@ async def list_public_tenants(db: AsyncSession = Depends(get_db_session)):
     return [TenantPublic.from_orm(tenant) for tenant in tenants]
 
 
+@router.get(
+    "/tenants/{tenant_slug}",
+    response_model=TenantPublic,
+    summary="Get tenant",
+    description="Get tenant by slug",
+)
+async def get_tenant(
+    tenant_slug: str,
+    db: AsyncSession = Depends(get_db_session),
+) -> Any:
+    """Get tenant by ID endpoint"""
+    tenant = await tenant_service.get_by_slug(db, tenant_slug)
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
+        )
+    return TenantPublic.from_orm(tenant)
+
+
 @router.post(
     "/tenants/register",
     response_model=TenantPublic,
