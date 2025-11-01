@@ -11,6 +11,7 @@ class EmailPriority(str, Enum):
 
 
 class EmailType(str, Enum):
+    TEST_EMAIL = "test_email"
     WELCOME_TENANT = "welcome_tenant"
     EMAIL_VERIFICATION = "email_verification"
     APPOINTMENT_CONFIRMATION = "appointment_confirmation"
