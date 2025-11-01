@@ -2306,7 +2306,7 @@ class AuthService:
                 detail="Failed to logout from all devices",
             )
 
-    async def get_current_user(
+    async def get_current_user_and_session(
         self,
         db: AsyncSession = Depends(get_db),
         credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -2322,6 +2322,7 @@ class AuthService:
                 credentials.credentials,
                 settings.SECRET_KEY,
                 algorithms=[settings.ALGORITHM],
+                options={"verify_exp": True},  # Ensure expiration is verified
             )
 
             if payload.get("type") != "access":
@@ -2332,6 +2333,14 @@ class AuthService:
 
             if user_id is None or session_id is None:
                 raise credentials_exception
+
+        except jwt.ExpiredSignatureError:
+            # Token has expired - check if we can refresh it
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired. Please refresh your token or log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         except JWTError:
             raise credentials_exception
@@ -2353,7 +2362,65 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
             )
 
-        return user, UUID(session_id)
+        return user, session_id
+
+    async def get_current_user(
+        self,
+        db: AsyncSession = Depends(get_db),
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+    ) -> User:
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+        try:
+            payload = jwt.decode(
+                credentials.credentials,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM],
+                options={"verify_exp": True},  # Ensure expiration is verified
+            )
+
+            if payload.get("type") != "access":
+                raise credentials_exception
+
+            user_id: str = payload.get("sub")
+            session_id: str = payload.get("session_id")
+
+            if user_id is None or session_id is None:
+                raise credentials_exception
+
+        except jwt.ExpiredSignatureError:
+            # Token has expired - check if we can refresh it
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired. Please refresh your token or log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        except JWTError:
+            raise credentials_exception
+
+        user = await self.user_service.get(db, UUID(user_id))
+        if user is None:
+            raise credentials_exception
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
+            )
+
+        # Validate session
+        if not await self.session_service.validate_session(
+            db, UUID(session_id), user.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
+            )
+
+        return user
 
     async def create_user(
         self, db: AsyncSession, user_data: UserCreate, tenant_id: Optional[str] = None
