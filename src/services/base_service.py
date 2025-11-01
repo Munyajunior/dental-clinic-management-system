@@ -25,7 +25,17 @@ class BaseService:
         """Get a single item by ID"""
         try:
             result = await db.execute(select(self.model).where(self.model.id == id))
-            return result.scalar_one_or_none()
+            item = result.scalar_one_or_none()
+            # DEBUG: Check what's returned
+            logger.debug(f"BaseService.get - Result type: {type(result)}")
+            logger.debug(f"BaseService.get - Item type: {type(item)}")
+            logger.debug(f"BaseService.get - Item: {item}")
+
+            if isinstance(item, tuple):
+                logger.error(f"TUPLE RETURNED FROM QUERY! Model: {self.model.__name__}")
+                logger.error(f"Tuple contents: {item}")
+
+            return item
         except SQLAlchemyError as e:
             await handle_db_exception(db, self.logger, f"get {self.model.__name__}", e)
             return None
@@ -61,13 +71,38 @@ class BaseService:
     async def create(self, db: AsyncSession, obj_in: CreateSchemaType) -> ModelType:
         """Create a new item"""
         try:
-            obj_in_data = obj_in.dict(exclude_unset=True)
+            logger.debug(f"BaseService.create - Model: {self.model.__name__}")
+
+            obj_in_data = obj_in.model_dump(exclude_unset=True)
+            logger.debug(f"BaseService.create - Input data: {obj_in_data}")
+
             db_obj = self.model(**obj_in_data)
+
+            # DEBUG: Check the object before adding
+            logger.debug(f"BaseService.create - DB object type: {type(db_obj)}")
+            logger.debug(f"BaseService.create - DB object: {db_obj}")
+
             db.add(db_obj)
+
+            # DEBUG: Before flush
+            logger.debug("BaseService.create - About to flush...")
+            await db.flush()
+
+            # DEBUG: After flush
+            logger.debug(
+                f"BaseService.create - After flush, ID: {getattr(db_obj, 'id', 'NO ID')}"
+            )
+
             await db.commit()
             await db.refresh(db_obj)
+
+            # DEBUG: Final object
+            logger.debug(f"BaseService.create - Final object: {db_obj}")
+            logger.debug(f"BaseService.create - Final object type: {type(db_obj)}")
+
             self.logger.info(f"Created {self.model.__name__} with ID: {db_obj.id}")
             return db_obj
+
         except IntegrityError as e:
             await db.rollback()
             self.logger.warning(f"Integrity error creating {self.model.__name__}: {e}")
