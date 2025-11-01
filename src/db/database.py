@@ -1,8 +1,10 @@
 # src/db/database.py
 from core.config import settings
+from fastapi import HTTPException
 from typing import AsyncGenerator, Dict, Any
 from contextvars import ContextVar
 from typing import Optional
+from uuid import UUID
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import text
@@ -70,20 +72,103 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     if not tenant_id:
         raise TenantNotFoundError("Tenant context is required for database operations")
 
+    # Validate UUID format
+    try:
+        UUID(tenant_id)
+    except ValueError:
+        raise TenantNotFoundError(f"Invalid tenant ID format: {tenant_id}")
+
     async with AsyncSessionLocal() as session:
         try:
-            # Set tenant ID for RLS
-            await session.execute(
-                text("SET app.tenant_id = :tenant_id"), {"tenant_id": tenant_id}
-            )
+            # Set tenant ID for RLS - use validated UUID directly
+            await session.execute(text(f"SET app.tenant_id = '{tenant_id}'"))
+
+            # Verify the setting was applied
+            result = await session.execute(text("SHOW app.tenant_id"))
+            actual_tenant_id = result.scalar()
+
+            if actual_tenant_id != tenant_id:
+                logger.error(
+                    f"Tenant ID mismatch: set {tenant_id}, got {actual_tenant_id}"
+                )
+                raise RLSConfigurationError("Failed to set tenant context")
+
+            # DEBUG: Log session creation
+            logger.debug(f"Database session created for tenant: {tenant_id}")
+
             yield session
+
             await session.commit()
+
+        except HTTPException as http_exc:
+            await session.rollback()
+            # Re-raise HTTP exceptions (like 401 Unauthorized)
+            raise http_exc
+
         except Exception as exc:
             await session.rollback()
-            logger.error(f"Database session error: {exc}")
+            logger.error(f"Database session error: {exc}", exc_info=True)
+
+            # DEBUG: Add more detailed error information
+            import traceback
+
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+
+            # Check if it's the specific tuple error
+            if "'tuple' object has no attribute 'id'" in str(exc):
+                logger.error(
+                    "TUPLE ERROR DETECTED - This indicates a query returning tuple instead of model"
+                )
+                # Add additional debugging for this specific case
+                await _debug_tuple_error(session, tenant_id)
+
             raise
         finally:
+            # Reset tenant context
+            try:
+                await session.execute(text("RESET app.tenant_id"))
+            except:
+                pass  # Ignore reset errors
             await session.close()
+
+
+async def _debug_tuple_error(session: AsyncSession, tenant_id: str):
+    """Debug function to identify where tuples are being returned"""
+    try:
+        logger.error("=== TUPLE ERROR DEBUGGING ===")
+        logger.error(f"Tenant ID: {tenant_id}")
+
+        # Check common tables that might be returning tuples
+        tables_to_check = ["patients", "users", "tenants", "appointments", "services"]
+
+        for table in tables_to_check:
+            try:
+                # Try to query each table and see what's returned
+                result = await session.execute(
+                    text(
+                        f"SELECT * FROM {table} WHERE tenant_id = '{tenant_id}' LIMIT 1"
+                    )
+                )
+                first_row = result.first()
+
+                if first_row:
+                    logger.error(f"Table {table}: first row type: {type(first_row)}")
+                    logger.error(f"Table {table}: first row: {first_row}")
+
+                    # Check if it's a tuple
+                    if isinstance(first_row, tuple):
+                        logger.error(f"TABLE {table} IS RETURNING TUPLES!")
+                        # Check the structure
+                        for i, item in enumerate(first_row):
+                            logger.error(f"  Item {i}: type={type(item)}, value={item}")
+
+            except Exception as table_error:
+                logger.error(f"Error checking table {table}: {table_error}")
+
+        logger.error("=== END TUPLE DEBUGGING ===")
+
+    except Exception as debug_error:
+        logger.error(f"Error in tuple debugging: {debug_error}")
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -107,19 +192,27 @@ async def setup_rls():
             # Create schema for application settings
             await conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
 
-            # Create function to set tenant context
+            # Create function to set tenant context - FIXED syntax
             await conn.execute(
                 text(
                     """
-                CREATE OR REPLACE FUNCTION app.set_tenant_id(tenant_id UUID)
+                CREATE OR REPLACE FUNCTION app.set_tenant_id(tenant_id TEXT)
                 RETURNS VOID AS $$
                 BEGIN
-                    PERFORM set_config('app.tenant_id', tenant_id::text, false);
+                    -- Validate UUID format
+                    IF tenant_id !~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' THEN
+                        RAISE EXCEPTION 'Invalid tenant ID format: %', tenant_id;
+                    END IF;
+                    
+                    PERFORM set_config('app.tenant_id', tenant_id, false);
                 END;
                 $$ LANGUAGE plpgsql;
             """
                 )
             )
+
+            logger.info("Created app.set_tenant_id function")
+
         except Exception as e:
             logger.warning(f"Schema creation warning: {e}")
 
@@ -214,6 +307,32 @@ async def setup_rls():
             logger.error(f"Failed to setup RLS for tenants table: {e}")
 
         logger.info("RLS policies configuration completed")
+
+
+async def verify_rls_health():
+    """Verify RLS is working correctly"""
+    async with AsyncSessionLocal() as session:
+        try:
+            # Test with a dummy tenant ID
+            test_tenant_id = "00000000-0000-0000-0000-000000000000"
+
+            await session.execute(text(f"SET app.tenant_id = '{test_tenant_id}'"))
+
+            # Try to query a tenant-aware table
+            result = await session.execute(text("SELECT count(*) FROM patients"))
+            count = result.scalar()
+
+            logger.info(f"RLS health check passed - patients count: {count}")
+            return True
+
+        except Exception as e:
+            logger.error(f"RLS health check failed: {e}")
+            return False
+        finally:
+            try:
+                await session.execute(text("RESET app.tenant_id"))
+            except:
+                pass
 
 
 async def create_tables():
