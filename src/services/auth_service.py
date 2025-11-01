@@ -1113,6 +1113,10 @@ class AuthService:
     ) -> None:
         """Enhanced refresh token storage with session management"""
         try:
+
+            # Convert user_id from string to UUID
+            user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+
             # Get user to retrieve tenant_id
             user = await self.user_service.get(db, UUID(user_id))
             if not user:
@@ -1132,7 +1136,7 @@ class AuthService:
             refresh_token = RefreshToken(
                 id=token_id,
                 tenant_id=session.tenant_id,
-                user_id=str(user_id),
+                user_id=user_uuid,
                 expires_at=ensure_utc(expires_at),
                 is_revoked=False,
                 session_id=session_id,
