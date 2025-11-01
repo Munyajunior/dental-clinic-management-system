@@ -3,6 +3,7 @@ from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from db.database import tenant_id_var
+from uuid import UUID
 from typing import Optional
 from sqlalchemy import select
 from models.tenant import Tenant
@@ -102,11 +103,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         async with AsyncSessionLocal() as session:
             try:
-                import uuid
-
                 # Try as UUID first
                 try:
-                    tenant_uuid = uuid.UUID(tenant_identifier)
+                    tenant_uuid = UUID(tenant_identifier)
                     result = await session.execute(
                         select(Tenant).where(
                             Tenant.id == tenant_uuid, Tenant.status == "active"
@@ -120,6 +119,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                         )
                     )
 
+                # FIX: Properly extract the scalar result
                 tenant = result.scalar_one_or_none()
 
                 if tenant:
