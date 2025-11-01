@@ -140,6 +140,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             "/docs",
             "/redoc",
             "/openapi.json",
+            "/api/v2/health/email",
             "/api/v2/health",
             "/api/v2/openapi.json",
             "/api/v2/startup-check",
