@@ -44,7 +44,7 @@ class EmailIntegrationService:
                 .where(Appointment.id == appointment_id)
             )
 
-            appointment_data = result.first()
+            appointment_data = result.scalar_one_or_none()
             if not appointment_data:
                 logger.error(f"Appointment {appointment_id} not found")
                 return False
@@ -212,7 +212,7 @@ class EmailIntegrationService:
                 .where(Invoice.id == invoice_id)
             )
 
-            invoice_data = result.first()
+            invoice_data = result.scalar_one_or_none()
             if not invoice_data:
                 logger.error(f"Invoice {invoice_id} not found")
                 return False
@@ -259,7 +259,7 @@ class EmailIntegrationService:
                 .where(Invoice.id == invoice_id)
             )
 
-            invoice_data = result.first()
+            invoice_data = result.scalar_one_or_none()
             if not invoice_data:
                 logger.error(f"Invoice {invoice_id} not found")
                 return False
@@ -299,7 +299,7 @@ class EmailIntegrationService:
                 .where(Prescription.id == prescription_id)
             )
 
-            prescription_data = result.first()
+            prescription_data = result.scalar_one_or_none()
             if not prescription_data:
                 logger.error(f"Prescription {prescription_id} not found")
                 return False
