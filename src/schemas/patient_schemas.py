@@ -29,6 +29,7 @@ class PatientCreate(PatientBase):
     insurance_info: Optional[Dict[str, Any]] = None
     preferences: Optional[Dict[str, Any]] = None
     password: Optional[str] = None
+    tenant_id: UUID
 
     @field_validator("date_of_birth")
     @classmethod
