@@ -15,7 +15,7 @@ class PatientBase(BaseSchema):
     date_of_birth: date
     gender: GenderEnum
     contact_number: str
-    email: Optional[EmailStr] = None
+    email: EmailStr
     address: str
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
@@ -29,7 +29,7 @@ class PatientCreate(PatientBase):
     insurance_info: Optional[Dict[str, Any]] = None
     preferences: Optional[Dict[str, Any]] = None
     password: Optional[str] = None
-    tenant_id: UUID
+    tenant_id: Optional[UUID] = None
 
     @field_validator("date_of_birth")
     @classmethod
