@@ -77,6 +77,8 @@ async def create_patient(
         if not hasattr(patient_data, "tenant_id") or not patient_data.tenant_id:
             patient_data.tenant_id = current_user.tenant_id
 
+        patient_data.password = patient_data.email.strip()
+
         # DEBUG: Check database session state
         logger.debug("About to call patient_service.create...")
         patient = await patient_service.create_patient(
