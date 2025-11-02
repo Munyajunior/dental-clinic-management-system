@@ -49,6 +49,7 @@ class Patient(Base):
     last_name = Column(String(50), nullable=False)
     date_of_birth = Column(Date, nullable=False)
     gender = Column(Enum(GenderEnum), nullable=False)
+    hashed_password = Column(String(255), nullable=False)
 
     # Contact information
     contact_number = Column(String(20), nullable=False)
