@@ -7,6 +7,7 @@ from sqlalchemy import select, and_, or_, func
 from fastapi import HTTPException, status
 from models.patient import Patient, PatientStatus
 from schemas.patient_schemas import PatientCreate, PatientUpdate, PatientSearch
+from services.auth_service import auth_service
 from utils.logger import setup_logger
 from .base_service import BaseService
 
@@ -37,9 +38,10 @@ class PatientService(BaseService):
                         status_code=status.HTTP_409_CONFLICT,
                         detail="Patient with this email already exists",
                     )
-
-            patient_dict = patient_data.model_dump()
+            hashed_password = auth_service.get_password_hash(patient_data.password)
+            patient_dict = patient_data.model_dump(exclude={"password"})
             patient_dict["created_by"] = created_by
+            patient_dict["hashed_password"] = hashed_password
             # DEBUG: Check what we're creating
             logger.debug(f"Patient dict before creation: {patient_dict}")
 
