@@ -53,7 +53,7 @@ class Patient(Base):
 
     # Contact information
     contact_number = Column(String(20), nullable=False)
-    email = Column(String(100), nullable=True)
+    email = Column(String(100), nullable=False)
     address = Column(Text, nullable=False)
     emergency_contact_name = Column(String(100), nullable=True)
     emergency_contact_phone = Column(String(20), nullable=True)
