@@ -272,6 +272,7 @@ async def health_check():
         "multi_tenant": True,
         "rls_enabled": True,
         "environment": settings.ENVIRONMENT,
+        "version": settings.API_VERSION,
     }
 
 
