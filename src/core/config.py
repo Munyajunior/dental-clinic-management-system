@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     # API settings
     API_PREFIX: str = Field("")
+    API_VERSION: int = 2
     DEBUG: bool = Field(False)
     ALLOWED_ORIGINS: str = Field("*")
 

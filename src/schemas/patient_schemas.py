@@ -1,8 +1,9 @@
 # src/schemas/patient_schemas.py
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import Field, EmailStr, field_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime, date
 from uuid import UUID
+import json
 from models.patient import PatientStatus, GenderEnum, InsuranceType
 from .base_schemas import BaseSchema, TimestampMixin, IDMixin, TenantMixin
 
@@ -79,6 +80,7 @@ class PatientPublic(BaseSchema):
     date_of_birth: date
     gender: GenderEnum
     contact_number: str
+    address: str
     email: Optional[EmailStr] = None
     status: PatientStatus
     last_visit_at: Optional[datetime] = None
@@ -91,11 +93,49 @@ class PatientDetail(PatientPublic):
     address: str
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
-    medical_history: Dict[str, Any]
-    dental_history: Dict[str, Any]
+    medical_history: Dict[str, Any] = Field(default_factory=dict)
+    dental_history: Dict[str, Any] = Field(default_factory=dict)
     insurance_info: Optional[Dict[str, Any]] = None
-    preferences: Dict[str, Any]
-    age: int
+    preferences: Dict[str, Any] = Field(default_factory=dict)
+    age: Optional[int] = None
+
+    @field_validator("medical_history", "dental_history", "preferences", mode="before")
+    @classmethod
+    def ensure_dict(cls, v):
+        """Ensure JSON fields are always dictionaries, not None"""
+        if v is None:
+            return {}
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except:
+                return {}
+        return v
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def calculate_age(cls, v, values):
+        """Calculate age from date of birth if not provided"""
+        if v is not None:
+            return v
+
+        # Calculate age from date_of_birth if available
+        if "date_of_birth" in values and values["date_of_birth"]:
+            dob = values["date_of_birth"]
+            if isinstance(dob, str):
+                try:
+                    dob = datetime.strptime(dob, "%Y-%m-%d").date()
+                except:
+                    return None
+            today = date.today()
+            age = (
+                today.year
+                - dob.year
+                - ((today.month, today.day) < (dob.month, dob.day))
+            )
+            return age
+
+        return None
 
 
 class PatientMedicalHistory(BaseSchema):
