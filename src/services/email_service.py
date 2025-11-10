@@ -123,7 +123,7 @@ class ResendEmailService:
         # Network health tracking
         self.last_success = None
         self.consecutive_failures = 0
-        self.max_consecutive_failures = 5
+        self.max_consecutive_failures = 10
 
         # Template configurations
         self.template_configs = {
@@ -224,7 +224,7 @@ class ResendEmailService:
     ) -> ResendSendParams:
         """Prepare properly typed parameters for Resend API"""
         params: ResendSendParams = {
-            "from_": f"{email_settings.FROM_NAME} <{email_settings.FROM_EMAIL}>",
+            "from": f"{email_settings.FROM_NAME} <{email_settings.FROM_EMAIL}>",
             "to": email_request.to,
             "subject": email_request.subject,
             "html": html_content,
