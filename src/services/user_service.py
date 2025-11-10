@@ -2,10 +2,10 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
 from fastapi import HTTPException, status
 from models.user import User, StaffRole
-from schemas.user_schemas import UserCreate, UserUpdate
+from schemas.user_schemas import UserCreate, UserUpdate, UserSearch
 from utils.logger import setup_logger
 from .base_service import BaseService
 from .auth_service import auth_service
@@ -135,11 +135,55 @@ class UserService(BaseService):
                 .where(
                     User.role == StaffRole.DENTIST, User.is_active, User.is_available
                 )
-                .order_by(User.first_name, User.last_name)
+                .order_by(Uail_tokenser.first_name, User.last_name)
             )
             return result.scalars().all()
         except Exception as e:
             logger.error(f"Error getting available dentists: {e}")
+            return []
+
+    async def search_users(
+        self,
+        db: AsyncSession,
+        search_params: UserSearch,
+        tenant_id: UUID,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> List[User]:
+        """Search Users with various filters"""
+        try:
+            query = select(User).where(User.tenant_id == tenant_id)
+
+            # Text search
+            if search_params.query:
+                search_term = f"%{search_params.query}%"
+                query = query.where(
+                    or_(
+                        User.first_name.ilike(search_term),
+                        User.last_name.ilike(search_term),
+                        User.email.ilike(search_term),
+                        User.contact_number.ilike(search_term),
+                    )
+                )
+
+            # Role filter
+            if search_params.role:
+                query = query.where(User.role == search_params.role)
+
+            # Status filter
+            if search_params.is_active:
+                query = query.where(User.is_active == search_params.is_active)
+
+            query = (
+                query.offset(skip)
+                .limit(limit)
+                .order_by(User.last_name, User.first_name)
+            )
+            result = await db.execute(query)
+            return result.scalars().all()
+
+        except Exception as e:
+            logger.error(f"Error searching Users: {e}")
             return []
 
 
