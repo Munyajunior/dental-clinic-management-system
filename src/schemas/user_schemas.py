@@ -93,7 +93,11 @@ class UserPublic(BaseSchema):
     role: StaffRole
     specialization: Optional[str] = None
     is_active: bool
+    is_verified: bool
     is_available: bool
+    work_schedule: Optional[Dict[str, Any]] = None
+    settings: Dict[str, Any]
+    last_login_at: Optional[datetime] = None
     profile_picture: Optional[str] = None
 
     @classmethod
@@ -130,6 +134,12 @@ class UserLogin(BaseSchema):
         if v is not None and not v.strip():
             raise ValueError("Tenant slug cannot be empty")
         return v
+
+
+class UserSearch(BaseSchema):
+    query: Optional[str] = None
+    role: Optional[StaffRole] = None
+    is_active: Optional[bool] = None
 
 
 class UserLoginResponse(BaseSchema):
