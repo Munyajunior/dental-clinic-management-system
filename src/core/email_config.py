@@ -9,18 +9,16 @@ load_dotenv()
 class EmailSettings(BaseSettings):
     """Email configuration settings"""
 
-    RESEND_API_KEY: str = "re_EaW98Bgf_52R1dJDc2JfK2ahPnVqLzdZs"
-    FROM_EMAIL: EmailStr = "noreply@kwantabit.com"
-    FROM_NAME: str = "Dental Clinic Management System"
-    SUPPORT_EMAIL: EmailStr = "support@kwantabit.com"
-    SETUP_GUIDE_URL: str = (
-        "https://docs.kwantabit.com/dental-clinic-management-system/getting-started"
-    )
-    WHATSAPP_SUPPORT: str = "+237 690908721"
-    DOWNLOAD_URL: str = "https://kwantabit.com/download"
+    RESEND_API_KEY: str
+    FROM_EMAIL: EmailStr = "example@gmail.com"
+    FROM_NAME: str
+    SUPPORT_EMAIL: EmailStr = "support@gmail.com"
+    SETUP_GUIDE_URL: str
+    WHATSAPP_SUPPORT: str
+    DOWNLOAD_URL: str
 
     # Template settings
-    TEMPLATE_DIR: str = "src/templates/email"
+    TEMPLATE_DIR: str
 
     # Feature flags
     SEND_EMAILS: bool = True
