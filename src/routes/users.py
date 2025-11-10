@@ -1,18 +1,22 @@
 # src/routes/users.py
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Any
+from typing import List, Any, Dict, Optional
 from uuid import UUID
 from db.database import get_db
 from schemas.user_schemas import (
     UserCreate,
     UserUpdate,
     UserPublic,
+    UserSearch,
+    StaffRole,
 )
 from services.user_service import user_service
 from services.auth_service import auth_service
 from utils.rate_limiter import limiter
+from utils.logger import setup_logger
 
+logger = setup_logger("_USER_ROUTES")
 router = APIRouter(prefix="/users", tags=["users"])
 
 
@@ -25,12 +29,24 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def list_users(
     skip: int = 0,
     limit: int = 100,
+    role: Optional[StaffRole] = None,
+    is_active: Optional[bool] = None,
+    query: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """List users endpoint"""
-    users = await user_service.get_multi(db, skip=skip, limit=limit)
-    return [UserPublic.from_orm(user) for user in users]
+    try:
+        search_params = UserSearch(query=query, role=role, is_active=is_active)
+        users = await user_service.search_users(
+            db, search_params, current_user.tenant_id, skip, limit
+        )
+        users_list = [UserPublic.from_orm(user) for user in users]
+        return users_list
+    except Exception as e:
+        logger.error(f"Error listing users: {e}")
+        # Return empty list on error
+        return []
 
 
 @router.post(
@@ -75,6 +91,24 @@ async def get_user(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return UserPublic.from_orm(user)
+
+
+@router.get(
+    "/dentists",
+    response_model=List[UserPublic],
+    summary="Get dentists",
+    description="Get list of available dentists",
+)
+async def get_dentists(
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> List[UserPublic]:
+    """Get dentists endpoint"""
+    try:
+        dentists = await user_service.get_available_dentists(db)
+        return [UserPublic.from_orm(dentist) for dentist in dentists]
+    except Exception as e:
+        logger.error(f"Failed to fetch available dentist: {str(e)}")
 
 
 @router.put(
