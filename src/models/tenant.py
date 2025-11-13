@@ -17,7 +17,7 @@ from sqlalchemy.sql import func
 from db.database import Base
 from enum import Enum as PyEnum
 from utils.logger import setup_logger
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = setup_logger("TENANT")
 
@@ -59,6 +59,15 @@ class Tenant(Base):
     contact_email = Column(String(100), nullable=False)
     contact_phone = Column(String(20), nullable=True)
     address = Column(Text, nullable=True)
+    office_hours = Column(
+        JSON,
+        nullable=False,
+        default={
+            "Monday-Friday": "8:00 AM - 5:00 PM",
+            "Saturday": "8:00 AM - PM",
+            "Sunday": "Closed",
+        },
+    )
 
     # Tenant Status & Tier
     tier = Column(Enum(TenantTier), default=TenantTier.TRIAL, nullable=False)
@@ -173,7 +182,7 @@ class Tenant(Base):
 
         # Set trial end date if not provided
         if not tenant.trial_ends_at and tenant.tier == TenantTier.TRIAL:
-            tenant.trial_ends_at = datetime.utcnow() + timedelta(days=30)
+            tenant.trial_ends_at = datetime.now(timezone.utc) + timedelta(days=30)
 
         session.add(tenant)
         await session.flush()
