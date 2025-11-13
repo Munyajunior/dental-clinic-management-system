@@ -57,6 +57,9 @@ class User(Base):
     license_number = Column(String(50), nullable=True)
     employee_id = Column(String(50), nullable=True)
 
+    # System Permissions
+    permissions = Column(JSON, default=dict)
+
     # Work schedule and availability
     work_schedule = Column(
         JSON, nullable=True
@@ -117,9 +120,17 @@ class User(Base):
     )
 
     def __init__(self, **kwargs):
-        # Ensure settings is always a dict and has required fields
+        # Ensure work_schedule is always a dict
+        if "work_schedule" not in kwargs or kwargs["work_schedule"] is None:
+            kwargs["work_schedule"] = {}
+
+        # Ensure settings is always a dict
         if "settings" not in kwargs or kwargs["settings"] is None:
             kwargs["settings"] = {}
+
+        # Ensure permissions is always a dict
+        if "permissions" not in kwargs or kwargs["permissions"] is None:
+            kwargs["permissions"] = {}
 
         # Initialize required settings fields if not present
         settings = kwargs["settings"]
