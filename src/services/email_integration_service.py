@@ -8,6 +8,8 @@ from fastapi import HTTPException, status
 
 from services.email_service import email_service, EmailType
 from schemas.email_schemas import EmailRequest, BulkEmailRequest, EmailAttachment
+from models.user import User, StaffRole
+from models.tenant import Tenant
 from models.appointment import Appointment
 from models.patient import Patient
 from models.user import User
@@ -166,6 +168,68 @@ class EmailIntegrationService:
         except Exception as e:
             logger.error(f"Error sending appointment reminders: {e}")
             return {"error": str(e)}
+
+    async def send_welcome_email_to_staff(
+        self,
+        db: AsyncSession,
+        staff_user_id: UUID,
+        temporary_password: Optional[str] = None,
+    ) -> bool:
+        """Send welcome email to new staff member"""
+        try:
+            # Get staff user and tenant info
+            result = await db.execute(
+                select(User, Tenant)
+                .join(Tenant, User.tenant_id == Tenant.id)
+                .where(User.id == staff_user_id)
+            )
+            user, tenant = result.first()
+
+            if not user or not tenant:
+                logger.error(f"Staff user or tenant not found for ID: {staff_user_id}")
+                return False
+
+            # Get manager info (first admin user in the tenant)
+            manager_result = await db.execute(
+                select(User)
+                .where(
+                    User.tenant_id == tenant.id,
+                    User.role == StaffRole.ADMIN,
+                    User.is_active == True,
+                )
+                .order_by(User.created_at)
+                .limit(1)
+            )
+            manager = manager_result.scalar_one_or_none()
+
+            # Send welcome email
+            response = await email_service.send_welcome_staff(
+                staff_email=user.email,
+                staff_name=f"{user.first_name} {user.last_name}",
+                staff_role=user.role.value,
+                clinic_name=tenant.name,
+                clinic_slug=tenant.slug,
+                clinic_address=tenant.address or "Main Clinic Location",
+                office_hours=tenant.office_hours,
+                manager_name=(
+                    f"{manager.first_name} {manager.last_name}"
+                    if manager
+                    else "Clinic Manager"
+                ),
+                manager_email=manager.email if manager else tenant.contact_email,
+                temporary_password=temporary_password,
+            )
+
+            if response.success:
+                logger.info(f"Welcome email sent to staff member: {user.email}")
+                return True
+            else:
+                logger.error(f"Failed to send welcome email to staff: {user.email}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error sending welcome email to staff {staff_user_id}: {e}")
+            return False
 
     async def send_welcome_email_to_patient(
         self,
