@@ -15,6 +15,7 @@ class TenantBase(BaseSchema):
     contact_email: EmailStr
     contact_phone: Optional[str] = None
     address: Optional[str] = None
+    office_hours: Optional[Dict[str, Any]] = None
 
 
 class TenantCreate(TenantBase):
