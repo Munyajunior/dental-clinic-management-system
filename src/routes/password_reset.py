@@ -51,11 +51,11 @@ async def request_password_reset(
     """Request password reset endpoint"""
     try:
         result = await password_reset_service.request_password_reset(
-            db, reset_request.email, background_tasks
+            db, reset_request.user_id, background_tasks
         )
 
         if result["success"]:
-            logger.info(f"Password reset requested for: {reset_request.email}")
+            logger.info(f"Password reset requested for: {reset_request.user_id}")
             return PasswordResetResponse(
                 success=True,
                 message="If an account with that email exists, a reset link has been sent.",
