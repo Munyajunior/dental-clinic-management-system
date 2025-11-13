@@ -1,0 +1,308 @@
+<!-- src/templates/email/welcome_staff.html -->
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to {{ clinic_name }} Team</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
+            line-height: 1.6; 
+            color: #1f2937; 
+            margin: 0; 
+            padding: 0; 
+            background: #f8fafc;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: #ffffff; 
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .header { 
+            background: linear-gradient(135deg, #3b82f6, #2563eb, #1d4ed8);
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center; 
+        }
+        .content { 
+            padding: 40px; 
+            background: #ffffff; 
+        }
+        .credentials-box { 
+            background: #f0f9ff; 
+            border: 2px solid #3b82f6; 
+            border-radius: 12px; 
+            padding: 25px; 
+            margin: 25px 0; 
+            position: relative;
+        }
+        .footer { 
+            text-align: center; 
+            padding: 30px; 
+            color: #6b7280; 
+            font-size: 14px; 
+            background: #f8fafc;
+            border-top: 1px solid #e5e7eb;
+        }
+        .button { 
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white; 
+            padding: 14px 28px; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            display: inline-block; 
+            font-weight: 600;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px -1px rgba(59, 130, 246, 0.4);
+        }
+        .security-note { 
+            background: #fef3c7; 
+            border-left: 4px solid #f59e0b; 
+            padding: 16px; 
+            margin: 20px 0; 
+            border-radius: 6px;
+        }
+        .step { 
+            background: #f8fafc; 
+            padding: 20px; 
+            margin: 15px 0; 
+            border-radius: 8px; 
+            border-left: 4px solid #3b82f6; 
+        }
+        .badge {
+            display: inline-block;
+            background: #3b82f6;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .role-badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .feature-item {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        .contact-card {
+            background: #f0f9ff;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        @media (max-width: 600px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+            .content {
+                padding: 25px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0; font-size: 28px; font-weight: 700;">Welcome to {{ clinic_name }} Team!</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your journey in dental excellence begins here</p>
+        </div>
+        
+        <div class="content">
+            <p>Dear <strong>{{ staff_name }}</strong>,</p>
+            
+            <p>Welcome to the {{ clinic_name }} team! We're thrilled to have you join our family of dental professionals dedicated to providing exceptional patient care.</p>
+            
+            <div style="text-align: center; margin: 25px 0;">
+                <div class="role-badge">
+                    {{ staff_role|title }} • {{ clinic_name }}
+                </div>
+            </div>
+            
+            <div class="credentials-box">
+                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0; color: #1e40af;">Your Staff Account Credentials</h3>
+                    <span class="badge">SECURE</span>
+                </div>
+                
+                <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;"><strong>Email:</strong></td>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-family: monospace;">{{ staff_email }}</td>
+                        </tr>
+                        {% if temporary_password %}
+                        <tr>
+                            <td style="padding: 8px 0;"><strong>Temporary Password:</strong></td>
+                            <td style="padding: 8px 0; font-family: monospace; color: #dc2626;">{{ temporary_password }}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+                
+                <div style="text-align: center; margin: 25px 0;">
+                    <p style="margin-bottom: 15px; font-weight: 600; color: #1e40af;">🚀 Quick Start</p>
+                    <a href="{{ deep_link_url }}" class="button">
+                        Launch Dental Clinic App
+                    </a>
+                    <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
+                        One-click access • Professional dashboard
+                    </p>
+                </div>
+                
+                {% if temporary_password %}
+                <div class="security-note">
+                    <strong>🔒 Security First:</strong> This is a temporary password. You'll be required to change it on first login for enhanced security.
+                </div>
+                {% endif %}
+            </div>
+            
+            <h3 style="color: #1e40af; border-bottom: 2px solid #3b82f6; padding-bottom: 8px;">Getting Started Guide</h3>
+            
+            <div class="step">
+                <h4 style="margin: 0 0 10px 0; color: #1e40af;">1. Access Your Account</h4>
+                <p style="margin: 0;">Click the button above or open the Dental Clinic Management application.</p>
+            </div>
+            
+            <div class="step">
+                <h4 style="margin: 0 0 10px 0; color: #1e40af;">2. First Login</h4>
+                <p style="margin: 0;">Use your credentials above. Your clinic <strong>({{ clinic_slug }})</strong> will be pre-selected.</p>
+            </div>
+            
+            <div class="step">
+                <h4 style="margin: 0 0 10px 0; color: #1e40af;">3. Complete Your Profile</h4>
+                <p style="margin: 0;">Add your profile picture, contact details, and professional information.</p>
+            </div>
+            
+            <div class="step">
+                <h4 style="margin: 0 0 10px 0; color: #1e40af;">4. Explore Features</h4>
+                <p style="margin: 0;">Familiarize yourself with the tools and features available for your role.</p>
+            </div>
+
+            <h3 style="color: #1e40af; margin-top: 30px;">Role-Specific Features</h3>
+            
+            <div class="feature-grid">
+                {% if staff_role in ['admin', 'manager'] %}
+                <div class="feature-item">
+                    <strong>👥 Team Management</strong>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Manage staff schedules, roles, and permissions</p>
+                </div>
+                {% endif %}
+                
+                {% if staff_role in ['admin', 'manager', 'dentist', 'hygienist'] %}
+                <div class="feature-item">
+                    <strong>📅 Appointment Scheduling</strong>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">View and manage your appointment calendar</p>
+                </div>
+                {% endif %}
+                
+                {% if staff_role in ['admin', 'manager', 'dentist'] %}
+                <div class="feature-item">
+                    <strong>📊 Patient Records</strong>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Access comprehensive patient dental histories</p>
+                </div>
+                {% endif %}
+                
+                {% if staff_role in ['admin', 'manager', 'receptionist'] %}
+                <div class="feature-item">
+                    <strong>💰 Billing & Invoicing</strong>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Process payments and manage financial records</p>
+                </div>
+                {% endif %}
+                
+                <div class="feature-item">
+                    <strong>📱 Multi-Device Access</strong>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Access your dashboard from any device</p>
+                </div>
+                
+                <div class="feature-item">
+                    <strong>🔒 HIPAA Compliant</strong>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Enterprise-grade security for patient data</p>
+                </div>
+            </div>
+            
+            <div class="contact-card">
+                <h4 style="margin: 0 0 15px 0; color: #1e40af;">📞 Team Contacts & Support</h4>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+                    <div>
+                        <strong>Clinic Manager</strong>
+                        <p style="margin: 5px 0; color: #6b7280;">{{ manager_name }}</p>
+                        <p style="margin: 5px 0; color: #6b7280;">{{ manager_email }}</p>
+                    </div>
+                    <div>
+                        <strong>Technical Support</strong>
+                        <p style="margin: 5px 0; color: #6b7280;">{{ support_email }}</p>
+                        <p style="margin: 5px 0; color: #6b7280;">{{ whatsapp_support }}</p>
+                    </div>
+                </div>
+                
+                <p style="margin: 15px 0 0 0; font-size: 14px; color: #6b7280;">
+                    <strong>Office Hours:</strong> {{ office_hours }}<br>
+                    <strong>Clinic Address:</strong> {{ clinic_address }}
+                </p>
+            </div>
+            
+            <div style="background: #f0fdf4; border: 1px solid #10b981; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">💡 Pro Tip</h4>
+                <p style="margin: 0;">Bookmark this email for future reference. Your clinic code <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ clinic_slug }}</code> will be needed for future logins.</p>
+            </div>
+            
+            <p><strong>Need Assistance?</strong></p>
+            <p>Our support team and clinic management are here to help you get started:</p>
+            <ul>
+                <li>📞 <strong>Clinic Manager:</strong> {{ manager_name }} ({{ manager_email }})</li>
+                <li>🔧 <strong>Technical Support:</strong> {{ support_email }}</li>
+                <li>📚 <strong>Training Materials:</strong> <a href="{{ training_guide_url }}">Staff Training Guide</a></li>
+                <li>🎥 <strong>Video Tutorials:</strong> <a href="https://kwantabit.com/tutorials">Watch Role-Specific Tutorials</a></li>
+            </ul>
+            
+            <p>We're excited to have you on board and look forward to working together to provide outstanding dental care to our patients!</p>
+            
+            <p>Warm welcome,<br>
+            <strong>The {{ clinic_name }} Management Team</strong></p>
+        </div>
+        
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>{{ clinic_name }}</strong><br>
+                {{ clinic_address }}
+            </p>
+            <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+                © 2025 {{ clinic_name }}. All rights reserved.<br>
+                This is an automated staff onboarding message.<br>
+                <a href="https://kwantabit.com/privacy" style="color: #6b7280;">Privacy Policy</a> • 
+                <a href="https://kwantabit.com/terms" style="color: #6b7280;">Terms of Service</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
