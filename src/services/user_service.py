@@ -1,6 +1,7 @@
 # src/services/user_service.py
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from fastapi import HTTPException, status
@@ -8,7 +9,7 @@ from models.user import User, StaffRole
 from schemas.user_schemas import UserCreate, UserUpdate, UserSearch
 from utils.logger import setup_logger
 from .base_service import BaseService
-from .auth_service import auth_service
+from .auth_service import auth_service, password_policy_service
 
 logger = setup_logger("USER_SERVICE")
 
@@ -37,45 +38,31 @@ class UserService(BaseService):
                 .offset(skip)
                 .limit(limit)
             )
-            return result.scalars().all()
+            return result.scalar_one_or_none()
         except Exception as e:
             logger.error(f"Error getting users by role {role}: {e}")
             return []
 
-    async def create_user(self, db: AsyncSession, user_data: UserCreate) -> User:
-        """Create new user with hashed password"""
-        # Check if user already exists
-        existing_user = await self.get_by_email(db, user_data.email)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="User with this email already exists",
-            )
-
-        # Hash password and create user
-        hashed_password = auth_service.get_password_hash(user_data.password)
-        user_dict = user_data.model_dump(exclude={"password"})
-        user_dict["hashed_password"] = hashed_password
-
-        user = User(**user_dict)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        logger.info(f"Created new user: {user.email} ({user.role})")
-        return user
+    async def get_by_id(self, db: AsyncSession, user_id: UUID) -> Optional[User]:
+        """Get user by ID"""
+        try:
+            result = await db.execute(select(User).where(User.id == user_id))
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting user by ID {user_id}: {e}")
+            return None
 
     async def update_user(
         self, db: AsyncSession, user_id: UUID, user_data: UserUpdate
     ) -> Optional[User]:
         """Update user information"""
-        user = await self.get(db, user_id)
+        user = await self.get_by_id(db, user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
-        update_data = user_data.dict(exclude_unset=True)
+        update_data = user_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(user, field, value)
 
@@ -86,18 +73,29 @@ class UserService(BaseService):
         return user
 
     async def change_password(
-        self, db: AsyncSession, user_id: UUID, password_data
+        self, db: AsyncSession, user_id: UUID, password_data: str
     ) -> bool:
         """Change user password"""
-        user = await self.get(db, user_id)
+        user = await self.get_by_id(db, user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
+        # Validate password strength
+        is_valid, errors = password_policy_service.validate_password_strength(
+            password_data
+        )
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Password does not meet security requirements: "
+                + "; ".join(errors),
+            )
+
         # Verify current password
         if not auth_service.verify_password(
-            password_data.current_password, user.hashed_password
+            password_data, getattr(user, "hashed_password")
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -105,9 +103,8 @@ class UserService(BaseService):
             )
 
         # Update password
-        user.hashed_password = auth_service.get_password_hash(
-            password_data.new_password
-        )
+        user.hashed_password = auth_service.get_password_hash(password_data)
+        user.settings["password_changed_at"] = datetime.now(timezone.utc).isoformat()
         await db.commit()
 
         logger.info(f"Password changed for user: {user.email}")
@@ -115,7 +112,7 @@ class UserService(BaseService):
 
     async def deactivate_user(self, db: AsyncSession, user_id: UUID) -> bool:
         """Deactivate user account"""
-        user = await self.get(db, user_id)
+        user = await self.get_by_id(db, user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -135,9 +132,9 @@ class UserService(BaseService):
                 .where(
                     User.role == StaffRole.DENTIST, User.is_active, User.is_available
                 )
-                .order_by(Uail_tokenser.first_name, User.last_name)
+                .order_by(User.first_name, User.last_name)
             )
-            return result.scalars().all()
+            return result.scalar_one_or_none()
         except Exception as e:
             logger.error(f"Error getting available dentists: {e}")
             return []
