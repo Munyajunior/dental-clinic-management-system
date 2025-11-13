@@ -25,6 +25,7 @@ class EmailType(str, Enum):
     PRESCRIPTION_READY = "prescription_ready"
     NEWSLETTER = "newsletter"
     SECURITY_ALERT = "security_alert"
+    CUSTOM_EMAIL = "custom_email"
 
 
 class EmailAttachment(BaseModel):
