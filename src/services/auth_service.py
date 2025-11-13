@@ -18,6 +18,7 @@ from models.tenant import Tenant, TenantPaymentStatus, TenantTier, BillingCycle
 from models.auth import RefreshToken, LoginAttempt, UserSession
 from schemas.user_schemas import UserLogin, UserCreate
 from services.email_service import email_service
+from services.email_integration_service import email_integration_service
 from services.usage_service import UsageService
 from services.payment_service import PaymentService
 from utils.logger import setup_logger
@@ -1084,15 +1085,24 @@ class AuthService:
         """Create refresh token with session context and store in database"""
         try:
             token_id = uuid4()
+            # Ensure user_id is properly formatted string
+            if isinstance(user_id, UUID):
+                user_id_str = str(user_id)
+            else:
+                user_id_str = str(user_id)
+
+            # Ensure session_id is properly formatted string
+            session_id_str = str(session_id)
+
             expire = get_utc_now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
             refresh_token_data = {
                 "jti": str(token_id),
-                "sub": str(user_id),
-                "exp": expire,
+                "sub": user_id_str,
+                "exp": expire.timestamp(),  # Use timestamp for consistency
                 "type": "refresh",
-                "session_id": str(session_id),
-                "iat": get_utc_now(),
+                "session_id": session_id_str,
+                "iat": get_utc_now().timestamp(),
             }
 
             refresh_token = jwt.encode(
@@ -1113,12 +1123,18 @@ class AuthService:
     ) -> None:
         """Enhanced refresh token storage with session management"""
         try:
-
-            # Convert user_id from string to UUID
-            user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+            # Convert user_id from string to UUID properly
+            if isinstance(user_id, str):
+                try:
+                    user_uuid = UUID(user_id)
+                except ValueError:
+                    logger.error(f"Invalid user_id format: {user_id}")
+                    raise ValueError(f"Invalid user_id format: {user_id}")
+            else:
+                user_uuid = user_id
 
             # Get user to retrieve tenant_id
-            user = await self.user_service.get(db, UUID(user_id))
+            user = await self.user_service.get(db, user_uuid)
             if not user:
                 raise ValueError(f"User not found: {user_id}")
 
@@ -1157,7 +1173,7 @@ class AuthService:
             refresh_token = result.scalar_one_or_none()
 
             if refresh_token:
-                refresh_token.is_revoked = True
+                setattr(refresh_token, "is_revoked", True)
                 await db.commit()
                 logger.info(f"Revoked refresh token: {token_id}")
         except Exception as e:
@@ -1185,7 +1201,7 @@ class AuthService:
 
     async def verify_refresh_token(
         self, db: AsyncSession, token: str
-    ) -> Tuple[Optional[User], Optional[UUID]]:
+    ) -> Tuple[User, UUID]:
         """Verify refresh token and return user"""
         try:
             payload = jwt.decode(
@@ -1588,7 +1604,6 @@ class AuthService:
             )
 
             # Eager load all necessary relationships and attributes
-            # This prevents the "greenlet_spawn" error by ensuring all data is loaded
             await db.refresh(
                 user,
                 [
@@ -1596,6 +1611,9 @@ class AuthService:
                     "tenant",  # Ensure tenant relationship is loaded
                 ],
             )
+
+            # Ensure user has proper default values for serialization
+            user = self._ensure_user_defaults(user)
 
             # Check if password reset is required BEFORE other security checks
             if self._should_force_password_reset(user):
@@ -2098,21 +2116,29 @@ class AuthService:
                 specialization=None,
                 license_number=None,
                 employee_id=None,
+                permissions={
+                    "Admin": [
+                        "user_manage",
+                        "patient_manage",
+                        "appointment_manage",
+                        "prescription_manage",
+                        "medical_records_manage",
+                        "services_manage",
+                        "invoice_manage",
+                        "treatment_manage",
+                        "report_view",
+                        "settings_manage",
+                    ]
+                },
                 is_active=True,
             )
 
-            user = await self.create_user(db, user_data, str(tenant.id))
+            user = await self.create_user(
+                db, user_data, background_tasks, str(tenant.slug), str(tenant.id)
+            )
 
             logger.info(
                 f"Created tenant admin user: {email} for tenant: {tenant.name} with password: {temp_password}"
-            )
-
-            # Send welcome email with setup instructions
-            background_tasks.add_task(
-                self.send_tenant_welcome_email_sync,
-                str(user.id),
-                temp_password,
-                str(tenant.slug),
             )
 
             return user
@@ -2122,17 +2148,31 @@ class AuthService:
             raise
 
     async def send_tenant_welcome_email_sync(
-        self, user_id: str, temp_password: str, tenant_slug: str
+        self,
+        db: AsyncSession,
+        user_id: str,
+        temp_password: str,
+        tenant_slug: str,
+        default_admin_user: bool = True,
     ):
         """Async wrapper to send welcome tenant email (background task)"""
         asyncio.create_task(
             self._send_tenant_welcome_email_async(
-                UUID(user_id), temp_password, tenant_slug
+                db,
+                UUID(user_id),
+                temp_password,
+                tenant_slug,
+                default_admin_user,
             )
         )
 
     async def _send_tenant_welcome_email_async(
-        self, user_id: UUID, temp_password: str, tenant_slug: str
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        temp_password: str,
+        tenant_slug: str,
+        default_admin_user: bool = True,
     ):
         """Async function for sending tenant welcome email"""
 
@@ -2158,6 +2198,11 @@ class AuthService:
                     temp_password=temp_password,
                     tenant_slug=str(tenant.slug),
                 )
+
+                if not default_admin_user:
+                    await email_integration_service.send_welcome_email_to_staff(
+                        db, user_id, temp_password
+                    )
 
             except Exception as e:
                 logger.error(
@@ -2362,7 +2407,7 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
             )
 
-        return user, session_id
+        return user, UUID(session_id)
 
     async def get_current_user(
         self,
@@ -2422,11 +2467,34 @@ class AuthService:
 
         return user
 
+    def _ensure_user_defaults(self, user: User) -> User:
+        """Ensure user object has proper default values for serialization"""
+        # Ensure work_schedule is never None
+        if getattr(user, "work_schedule", None) is None:
+            user.work_schedule = {}
+
+        # Ensure settings is never None
+        if getattr(user, "settings", None) is None:
+            user.settings = {}
+
+        # Ensure permissions is never None
+        if getattr(user, "permissions", None) is None:
+            user.permissions = {}
+
+        return user
+
     async def create_user(
-        self, db: AsyncSession, user_data: UserCreate, tenant_id: Optional[str] = None
+        self,
+        db: AsyncSession,
+        user_data: UserCreate,
+        background_tasks: BackgroundTasks,
+        tenant_slug: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        create_default_user: bool = True,
     ) -> User:
         """Create user - automatically uses current tenant context if not specified"""
         try:
+            default_admin_user: bool = create_default_user
             # Validate password strength
             is_valid, errors = password_policy_service.validate_password_strength(
                 user_data.password
@@ -2482,7 +2550,6 @@ class AuthService:
             user_data_dict["settings"] = user_data_dict.get("settings", {})
             user_data_dict["settings"].update(
                 {
-                    "password_changed_at": get_utc_now(),
                     "login_count": 0,
                     "account_locked_until": None,
                     "temporary_password": True,
@@ -2496,8 +2563,17 @@ class AuthService:
             await db.refresh(user)
 
             logger.info(f"Created new user: {user.email} in tenant: {user.tenant_id}")
-            # TODO: Send welcome email with security guidelines
             # TODO: Log user creation for audit purposes
+
+            # Send welcome email with setup instructions
+            background_tasks.add_task(
+                self.send_tenant_welcome_email_sync,
+                db,
+                str(user.id),
+                user_data.password,
+                tenant_slug,
+                default_admin_user,
+            )
 
             return user
         except HTTPException:
