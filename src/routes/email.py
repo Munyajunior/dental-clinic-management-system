@@ -9,6 +9,7 @@ from fastapi import (
     Request,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from typing import Optional, Any
 from pydantic import EmailStr
 from uuid import UUID
@@ -22,6 +23,7 @@ from schemas.email_schemas import (
     TestEmailRequest,
     TestEmailResponse,
 )
+from models.user import User
 from services.email_service import email_service
 from services.email_integration_service import email_integration_service
 from services.appointment_service import appointment_service
@@ -69,6 +71,102 @@ async def send_email(
     logger.info(f"Email sent by {current_user.email} to {email_request.to}")
 
     return response
+
+
+@router.post(
+    "/staff/{staff_id}/welcome",
+    summary="Send welcome email to staff",
+    description="Send welcome email to new staff member with credentials",
+)
+async def send_welcome_staff_email(
+    staff_id: UUID,
+    temporary_password: Optional[str] = None,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Send welcome email to staff endpoint"""
+    # Only admins and managers can send staff welcome emails
+    if current_user.role not in ["admin", "manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to send staff welcome emails",
+        )
+
+    # Check if the staff member exists and belongs to the same tenant
+    staff_result = await db.execute(
+        select(User).where(
+            User.id == staff_id, User.tenant_id == current_user.tenant_id
+        )
+    )
+    staff_user = staff_result.scalar_one_or_none()
+
+    if not staff_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff member not found",
+        )
+
+    # Send welcome email
+    success = await email_integration_service.send_welcome_email_to_staff(
+        db, staff_id, temporary_password
+    )
+
+    if success:
+        logger.info(f"Welcome email sent to staff {staff_id} by {current_user.email}")
+        return {
+            "message": "Staff welcome email sent successfully",
+            "staff_email": staff_user.email,
+            "staff_name": f"{staff_user.first_name} {staff_user.last_name}",
+        }
+    else:
+        logger.error(f"Failed to send welcome email to staff {staff_id}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send staff welcome email",
+        )
+
+
+@router.get("/templates", summary="List email templates")
+async def list_email_templates(
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """List available email templates"""
+    templates = []
+    for email_type, config in email_service.template_configs.items():
+        templates.append(
+            {
+                "type": email_type.value,
+                "name": config["template"].replace("_", " ").title(),
+                "description": f"Template for {email_type.value.replace('_', ' ')}",
+                "subject": config["subject"],
+            }
+        )
+
+    return {"templates": templates}
+
+
+@router.post("/preview", summary="Preview email")
+async def preview_email(
+    email_request: EmailRequest,
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Preview email before sending"""
+    # Render the template to generate preview
+    try:
+        html_content, text_content = email_service.template_manager.render_template(
+            email_request.template_name, email_request.template_data
+        )
+
+        return {
+            "success": True,
+            "preview": {"html": html_content, "text": text_content},
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to preview email: {str(e)}",
+        )
 
 
 @router.post(
