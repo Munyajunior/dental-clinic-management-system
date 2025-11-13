@@ -1,0 +1,57 @@
+Welcome to {{ clinic_name }} Team!
+
+Dear {{ staff_name }},
+
+Welcome to the {{ clinic_name }} team! We're thrilled to have you join our family of dental professionals dedicated to providing exceptional patient care.
+
+YOUR STAFF ACCOUNT CREDENTIALS
+==============================
+Role: {{ staff_role|title }}
+Email: {{ staff_email }}
+{% if temporary_password %}Temporary Password: {{ temporary_password }}{% endif %}
+Clinic: {{ clinic_slug }}
+
+QUICK START GUIDE
+=================
+1. Launch the Dental Clinic Application
+2. Use your credentials above (clinic {{ clinic_slug }} will be pre-selected)
+3. Complete your profile with professional information
+4. Explore role-specific features and tools
+
+{% if temporary_password %}
+SECURITY NOTE: This is a temporary password. Change it on first login.
+{% endif %}
+
+ROLE-SPECIFIC FEATURES
+======================
+{% if staff_role in ['admin', 'manager'] %}• Team Management & Scheduling{% endif %}
+{% if staff_role in ['admin', 'manager', 'dentist', 'hygienist'] %}• Appointment Calendar Management{% endif %}
+{% if staff_role in ['admin', 'manager', 'dentist'] %}• Patient Records Access{% endif %}
+{% if staff_role in ['admin', 'manager', 'receptionist'] %}• Billing & Invoicing{% endif %}
+• Multi-Device Access
+• HIPAA Compliant Security
+
+TEAM CONTACTS & SUPPORT
+=======================
+Clinic Manager: {{ manager_name }} ({{ manager_email }})
+Technical Support: {{ support_email }}
+WhatsApp Support: {{ whatsapp_support }}
+
+Office Hours: {{ office_hours }}
+Clinic Address: {{ clinic_address }}
+
+TRAINING RESOURCES
+==================
+Staff Training Guide: {{ training_guide_url }}
+Video Tutorials: https://kwantabit.com/tutorials
+
+We're excited to have you on board and look forward to working together to provide outstanding dental care to our patients!
+
+Warm welcome,
+The {{ clinic_name }} Management Team
+
+---
+{{ clinic_name }}
+{{ clinic_address }}
+
+© 2025 {{ clinic_name }}. All rights reserved.
