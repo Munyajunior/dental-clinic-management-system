@@ -28,26 +28,26 @@ class PasswordResetService:
         self.token_expiry_hours = 24  # Token expires after 24 hours
 
     async def request_password_reset(
-        self, db: AsyncSession, email: str, background_tasks: BackgroundTasks
+        self, db: AsyncSession, user_id: UUID, background_tasks: BackgroundTasks
     ) -> Dict[str, Any]:
         """Request password reset for a user"""
         try:
-            # Find user by email
+            # Find user by id
             result = await db.execute(
-                select(User).where(User.email == email, User.is_active)
+                select(User).where(User.id == user_id, User.is_active)
             )
             user = result.scalar_one_or_none()
 
             # Always return success for security (don't reveal if user exists)
             if not user:
-                logger.warning(
-                    f"Password reset requested for non-existent email: {email}"
-                )
+                logger.warning("Password reset requested for non-existent user")
                 return {"success": True}
 
             # Generate secure reset token
             token = self._generate_secure_token()
-            expires_at = datetime.utcnow() + timedelta(hours=self.token_expiry_hours)
+            expires_at = datetime.now(timezone.utc) + timedelta(
+                hours=self.token_expiry_hours
+            )
 
             # Create reset token record
             reset_token = PasswordResetToken(
@@ -184,6 +184,7 @@ class PasswordResetService:
 
                 template_data = {
                     "user_name": f"{user.first_name} {user.last_name}",
+                    "user_email": user.email,
                     "reset_token": token,
                     "deep_link_url": deep_link,
                     "expiry_hours": self.token_expiry_hours,
