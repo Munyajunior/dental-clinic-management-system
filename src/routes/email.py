@@ -10,7 +10,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from pydantic import EmailStr
 from uuid import UUID
 
@@ -146,26 +146,50 @@ async def list_email_templates(
     return {"templates": templates}
 
 
-@router.post("/preview", summary="Preview email")
-async def preview_email(
-    email_request: EmailRequest,
+@router.post(
+    "/preview",
+    summary="Preview email template",
+    description="Render email template with data for preview without sending",
+)
+async def preview_email_template(
+    preview_request: Dict[str, Any],
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Preview email before sending"""
-    # Render the template to generate preview
+    """Preview email template with data"""
     try:
+        template_name = preview_request.get("template_name")
+        template_data = preview_request.get("template_data", {})
+
+        if not template_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Template name is required",
+            )
+
+        # Render the template to generate preview
         html_content, text_content = email_service.template_manager.render_template(
-            email_request.template_name, email_request.template_data
+            template_name, template_data
         )
 
         return {
             "success": True,
-            "preview": {"html": html_content, "text": text_content},
+            "preview": {
+                "html": html_content,
+                "text": text_content,
+                "template_name": template_name,
+                "template_data": template_data,
+            },
         }
-    except Exception as e:
+    except FileNotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to preview email: {str(e)}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Template not found: {str(e)}",
+        )
+    except Exception as e:
+        logger.error(f"Template preview error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview template: {str(e)}",
         )
 
 
