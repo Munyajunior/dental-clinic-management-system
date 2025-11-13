@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from fastapi import HTTPException, status
 from models.tenant import Tenant, TenantTier, TenantStatus
@@ -138,10 +139,7 @@ class TenantService(BaseService):
             )
             monthly_revenue = monthly_revenue_result.scalar() or 0
 
-            # Get active patients (visited in last 30 days)
-            from datetime import datetime, timedelta
-
-            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
             active_patients_count = await db.execute(
                 select(func.count(func.distinct(Appointment.patient_id))).where(
                     Appointment.tenant_id == tenant_id,
