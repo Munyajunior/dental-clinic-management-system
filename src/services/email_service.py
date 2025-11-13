@@ -131,6 +131,7 @@ class ResendEmailService:
                 "template": "test_email",
                 "subject": "Testing Email service",
             },
+            EmailType.CUSTOM_EMAIL: {"template": "custom_email", "subject": ""},
             EmailType.WELCOME_TENANT: {
                 "template": "welcome_tenant",
                 "subject": "Welcome to KwantaBit Dental Clinic Management Suite - Your Default Admin Credentials",
@@ -604,6 +605,65 @@ class ResendEmailService:
             to=[patient_email],
             template_data=template_data,
         )
+
+    async def send_welcome_staff(
+        self,
+        staff_email: str,
+        staff_name: str,
+        staff_role: str,
+        clinic_name: str,
+        clinic_slug: str,
+        clinic_address: str,
+        manager_name: str,
+        manager_email: str,
+        office_hours: str,
+        temporary_password: Optional[str] = None,
+    ) -> EmailResponse:
+        """Send welcome email to new staff member"""
+        try:
+            # Create deep link for one-click login
+            deep_link = URLSchemeHandler.create_deep_link("login", tenant=clinic_slug)
+
+            template_data = {
+                "staff_name": staff_name,
+                "staff_email": staff_email,
+                "staff_role": staff_role,
+                "clinic_name": clinic_name,
+                "clinic_slug": clinic_slug,
+                "clinic_address": clinic_address,
+                "manager_name": manager_name,
+                "manager_email": manager_email,
+                "temporary_password": temporary_password,
+                "deep_link_url": deep_link,
+                "support_email": email_settings.FROM_EMAIL,
+                "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
+                "training_guide_url": email_settings.SETUP_GUIDE_URL,
+                "office_hours": office_hours,
+            }
+
+            response = await self.send_templated_email(
+                EmailType.WELCOME_STAFF,
+                to=[staff_email],
+                template_data=template_data,
+            )
+
+            # If email fails, log the credentials for manual recovery
+            if not response.success:
+                logger.warning(
+                    f"STAFF WELCOME EMAIL FAILED - Could not send to {staff_email}. "
+                    f"Manual intervention required. Staff: {staff_name}, Role: {staff_role}, "
+                    f"Clinic: {clinic_name}"
+                )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to prepare staff welcome email: {e}")
+            return EmailResponse(
+                success=False,
+                error=f"Failed to prepare staff welcome email: {str(e)}",
+                recipients=[staff_email],
+            )
 
     async def send_welcome_patient(
         self,
