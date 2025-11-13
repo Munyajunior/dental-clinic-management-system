@@ -1,5 +1,13 @@
 # src/routes/auth.py (Enhanced)
-from fastapi import APIRouter, Depends, status, HTTPException, Body, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    status,
+    HTTPException,
+    Body,
+    Request,
+    BackgroundTasks,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any, Tuple
 from uuid import UUID
@@ -50,11 +58,14 @@ async def login(
             db, login_data, ip_address=client_ip, user_agent=user_agent, request=request
         )
 
+        # Use safe conversion to handle None values
+        user_public = UserPublic.from_orm_safe(result["user"])
+
         return UserLoginResponse(
             access_token=result["access_token"],
             refresh_token=result["refresh_token"],
             token_type=result["token_type"],
-            user=UserPublic.from_orm(result["user"]),
+            user=user_public,
             tenant=result.get("tenant"),
             session_id=result["session_id"],
             password_reset_required=result.get("password_reset_required", False),
@@ -115,12 +126,19 @@ async def refresh_tokens(
 @limiter.limit("10/minute")
 async def register(
     request: Request,
+    background_tasks: BackgroundTasks,
     user_data: UserCreate,
-    db: AsyncSession = Depends(get_db),  # TENANT session - requires tenant context
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """User registration endpoint - creates user within current tenant"""
-    user = await auth_service.create_user(db, user_data)
-    await db.commit()
+    user = await auth_service.create_user(
+        db=db,
+        user_data=user_data,
+        background_tasks=background_tasks,
+        tenant_id=current_user.tenant_id,
+        create_default_user=False,
+    )
     return UserPublic.from_orm(user)
 
 
