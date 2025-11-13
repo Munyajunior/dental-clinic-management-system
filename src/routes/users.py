@@ -30,14 +30,28 @@ async def list_users(
     skip: int = 0,
     limit: int = 100,
     role: Optional[StaffRole] = None,
-    is_active: Optional[bool] = None,
+    is_active: Optional[Any] = None,  # Allow any type for flexible handling
     query: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """List users endpoint"""
+    """List users endpoint with flexible boolean handling"""
     try:
-        search_params = UserSearch(query=query, role=role, is_active=is_active)
+        # Convert is_active to boolean if it's a string
+        is_active_bool = None
+        if is_active is not None:
+            if isinstance(is_active, str):
+                if is_active.lower() in ["true", "1", "yes"]:
+                    is_active_bool = True
+                elif is_active.lower() in ["false", "0", "no"]:
+                    is_active_bool = False
+                else:
+                    # If it's not a clear boolean string, treat as True for safety
+                    is_active_bool = True
+            else:
+                is_active_bool = bool(is_active)
+
+        search_params = UserSearch(query=query, role=role, is_active=is_active_bool)
         users = await user_service.search_users(
             db, search_params, current_user.tenant_id, skip, limit
         )
@@ -45,7 +59,7 @@ async def list_users(
         return users_list
     except Exception as e:
         logger.error(f"Error listing users: {e}")
-        # Return empty list on error
+        # Return empty list on error rather than crashing
         return []
 
 
