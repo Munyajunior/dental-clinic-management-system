@@ -3,12 +3,13 @@ from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from .base_schemas import BaseSchema, ResponseBase
 from schemas.user_schemas import UserPublic
+from uuid import UUID
 
 
 class PasswordResetRequest(BaseModel):
     """Password reset request schema"""
 
-    email: EmailStr
+    user_id: UUID
 
 
 class PasswordResetVerify(BaseModel):
