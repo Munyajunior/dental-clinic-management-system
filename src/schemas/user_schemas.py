@@ -7,6 +7,18 @@ from models.user import StaffRole, GenderEnum
 from .base_schemas import BaseSchema, TimestampMixin, IDMixin, TenantMixin
 
 
+class UserWorkSchedule(BaseSchema):
+    """User work schedule schema"""
+
+    monday: List[str] = []  # ["09:00-17:00"]
+    tuesday: List[str] = []
+    wednesday: List[str] = []
+    thursday: List[str] = []
+    friday: List[str] = []
+    saturday: List[str] = []
+    sunday: List[str] = []
+
+
 class UserBase(BaseSchema):
     """Base user schema"""
 
@@ -27,11 +39,10 @@ class UserCreate(UserBase):
 
     password: str
     is_active: bool = True
-    work_schedule: Optional[Dict[str, Any]] = None
-
+    work_schedule: Optional[UserWorkSchedule] = None
+    permissions: Dict[str, Any]
     contact_number: Optional[str] = None
     date_of_birth: Optional[date] = None
-    gender: Optional[GenderEnum] = None
 
     @field_validator("password")
     @classmethod
@@ -66,8 +77,9 @@ class UserUpdate(BaseSchema):
     employee_id: Optional[str] = None
     is_active: Optional[bool] = None
     is_available: Optional[bool] = None
-    work_schedule: Optional[Dict[str, Any]] = None
+    work_schedule: Optional[UserWorkSchedule] = None
     settings: Optional[Dict[str, Any]] = None
+    permissions: Optional[Dict[str, Any]] = None
 
 
 class UserInDB(IDMixin, TenantMixin, UserBase, TimestampMixin):
@@ -95,14 +107,52 @@ class UserPublic(BaseSchema):
     is_active: bool
     is_verified: bool
     is_available: bool
-    work_schedule: Optional[Dict[str, Any]] = None
-    settings: Dict[str, Any]
+    work_schedule: Dict[str, Any] = {}
+    settings: Dict[str, Any] = {}
+    permissions: Dict[str, Any] = {}
     last_login_at: Optional[datetime] = None
     profile_picture: Optional[str] = None
 
     @classmethod
     def from_orm_safe(cls, user: Any) -> "UserPublic":
         """Safe conversion from ORM model to UserPublic"""
+        # Handle work_schedule - ensure it's always a dict
+        work_schedule = getattr(user, "work_schedule", None)
+        if work_schedule is None:
+            work_schedule = {}
+        elif isinstance(work_schedule, str):
+            # Handle case where it might be stored as JSON string
+            try:
+                import json
+
+                work_schedule = json.loads(work_schedule)
+            except:
+                work_schedule = {}
+
+        # Handle settings - ensure it's always a dict
+        settings = getattr(user, "settings", None)
+        if settings is None:
+            settings = {}
+        elif isinstance(settings, str):
+            try:
+                import json
+
+                settings = json.loads(settings)
+            except:
+                settings = {}
+
+        # Handle permissions - ensure it's always a dict
+        permissions = getattr(user, "permissions", None)
+        if permissions is None:
+            permissions = {}
+        elif isinstance(permissions, str):
+            try:
+                import json
+
+                permissions = json.loads(permissions)
+            except:
+                permissions = {}
+
         return cls(
             id=getattr(user, "id"),
             first_name=getattr(user, "first_name", ""),
@@ -112,7 +162,12 @@ class UserPublic(BaseSchema):
             role=getattr(user, "role"),
             specialization=getattr(user, "specialization", None),
             is_active=getattr(user, "is_active", True),
+            is_verified=getattr(user, "is_verified", False),
             is_available=getattr(user, "is_available", True),
+            work_schedule=work_schedule,
+            settings=settings,
+            permissions=permissions,
+            last_login_at=getattr(user, "last_login_at", None),
             profile_picture=(
                 user.get_profile_picture_base64()
                 if hasattr(user, "get_profile_picture_base64")
@@ -180,18 +235,6 @@ class UserAvailability(BaseSchema):
     available_from: Optional[datetime] = None
     available_until: Optional[datetime] = None
     reason: Optional[str] = None
-
-
-class UserWorkSchedule(BaseSchema):
-    """User work schedule schema"""
-
-    monday: List[str] = []  # ["09:00-17:00"]
-    tuesday: List[str] = []
-    wednesday: List[str] = []
-    thursday: List[str] = []
-    friday: List[str] = []
-    saturday: List[str] = []
-    sunday: List[str] = []
 
 
 class TokenRefresh(BaseSchema):
