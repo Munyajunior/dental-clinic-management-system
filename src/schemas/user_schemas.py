@@ -192,9 +192,27 @@ class UserLogin(BaseSchema):
 
 
 class UserSearch(BaseSchema):
+    """User search parameters with flexible boolean handling"""
+
     query: Optional[str] = None
     role: Optional[StaffRole] = None
-    is_active: Optional[bool] = None
+    is_active: Optional[Any] = None  # Allow any type for flexible boolean handling
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def validate_is_active(cls, v):
+        """Flexible boolean validation"""
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            if v.lower() in ["true", "1", "yes"]:
+                return True
+            elif v.lower() in ["false", "0", "no"]:
+                return False
+        # Return as is for the service to handle
+        return v
 
 
 class UserLoginResponse(BaseSchema):
