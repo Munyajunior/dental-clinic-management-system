@@ -147,7 +147,7 @@ class UserService(BaseService):
         skip: int = 0,
         limit: int = 50,
     ) -> List[User]:
-        """Search Users with various filters"""
+        """Search Users with various filters - FIXED boolean handling"""
         try:
             query = select(User).where(User.tenant_id == tenant_id)
 
@@ -167,9 +167,21 @@ class UserService(BaseService):
             if search_params.role:
                 query = query.where(User.role == search_params.role)
 
-            # Status filter
-            if search_params.is_active:
-                query = query.where(User.is_active == search_params.is_active)
+            # Status filter - FIXED: Handle both boolean and string values
+            if search_params.is_active is not None:
+                # Convert to boolean if it's a string
+                if isinstance(search_params.is_active, str):
+                    if search_params.is_active.lower() in ["true", "1", "yes"]:
+                        is_active_bool = True
+                    elif search_params.is_active.lower() in ["false", "0", "no"]:
+                        is_active_bool = False
+                    else:
+                        # Default to True if unclear
+                        is_active_bool = True
+                else:
+                    is_active_bool = bool(search_params.is_active)
+
+                query = query.where(User.is_active == is_active_bool)
 
             query = (
                 query.offset(skip)
@@ -177,7 +189,12 @@ class UserService(BaseService):
                 .order_by(User.last_name, User.first_name)
             )
             result = await db.execute(query)
-            return result.scalars().all()
+            users = result.scalars().all()
+
+            logger.info(
+                f"Found {len(users)} users with filters: role={search_params.role}, is_active={search_params.is_active}"
+            )
+            return users
 
         except Exception as e:
             logger.error(f"Error searching Users: {e}")
