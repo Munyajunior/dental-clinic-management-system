@@ -1,5 +1,5 @@
 # src/routes/users.py
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Any, Dict, Optional
 from uuid import UUID
@@ -41,7 +41,7 @@ async def list_users(
         users = await user_service.search_users(
             db, search_params, current_user.tenant_id, skip, limit
         )
-        users_list = [UserPublic.from_orm(user) for user in users]
+        users_list = [UserPublic.from_orm_safe(user) for user in users]
         return users_list
     except Exception as e:
         logger.error(f"Error listing users: {e}")
@@ -58,6 +58,7 @@ async def list_users(
 )
 async def create_user(
     user_data: UserCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
@@ -69,7 +70,13 @@ async def create_user(
             detail="Not authorized to create users",
         )
 
-    user = await user_service.create_user(db, user_data)
+    user = await auth_service.create_user(
+        db=db,
+        user_data=user_data,
+        background_tasks=background_tasks,
+        tenant_id=current_user.tenant_id,
+        create_default_user=False,
+    )
     return UserPublic.from_orm(user)
 
 
@@ -90,7 +97,7 @@ async def get_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    return UserPublic.from_orm(user)
+    return UserPublic.from_orm_safe(user)
 
 
 @router.get(
@@ -106,9 +113,10 @@ async def get_dentists(
     """Get dentists endpoint"""
     try:
         dentists = await user_service.get_available_dentists(db)
-        return [UserPublic.from_orm(dentist) for dentist in dentists]
+        return [UserPublic.from_orm_safe(dentist) for dentist in dentists]
     except Exception as e:
         logger.error(f"Failed to fetch available dentist: {str(e)}")
+        return []
 
 
 @router.put(
@@ -136,7 +144,7 @@ async def update_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    return UserPublic.from_orm(user)
+    return UserPublic.from_orm_safe(user)
 
 
 @router.delete(
