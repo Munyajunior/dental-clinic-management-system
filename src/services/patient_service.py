@@ -5,8 +5,14 @@ from datetime import date, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from fastapi import HTTPException, status
-from models.patient import Patient, PatientStatus
-from schemas.patient_schemas import PatientCreate, PatientUpdate, PatientSearch
+from models.patient import Patient, PatientStatus, AssignmentReason
+from models.user import User, StaffRole
+from schemas.patient_schemas import (
+    PatientCreate,
+    PatientUpdate,
+    PatientSearch,
+    DentistWorkload,
+)
 from services.auth_service import auth_service
 from utils.logger import setup_logger
 from .base_service import BaseService
@@ -42,6 +48,14 @@ class PatientService(BaseService):
             patient_dict = patient_data.model_dump(exclude={"password"})
             patient_dict["created_by"] = created_by
             patient_dict["hashed_password"] = hashed_password
+
+            # Handle dentist assignment
+            if patient_data.assigned_dentist_id:
+                await self._validate_dentist_assignment(
+                    db, patient_data.assigned_dentist_id, patient_data.tenant_id
+                )
+                patient_dict["dentist_assignment_date"] = datetime.utcnow()
+
             # DEBUG: Check what we're creating
             logger.debug(f"Patient dict before creation: {patient_dict}")
 
@@ -82,6 +96,367 @@ class PatientService(BaseService):
                     logger.error(f"Patient became a tuple: {patient}")
 
             raise
+
+    async def assign_dentist_to_patient(
+        self,
+        db: AsyncSession,
+        patient_id: UUID,
+        dentist_id: UUID,
+        assignment_reason: AssignmentReason,
+        assigned_by: UUID,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Assign a specific dentist to a patient"""
+        # Get patient
+        patient = await self.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Validate dentist
+        await self._validate_dentist_assignment(db, dentist_id, patient.tenant_id)
+
+        # Update patient assignment
+        patient.assigned_dentist_id = dentist_id
+        patient.assignment_reason = assignment_reason
+        patient.dentist_assignment_date = datetime.utcnow()
+        patient.updated_by = assigned_by
+
+        await db.commit()
+        await db.refresh(patient)
+
+        logger.info(f"Assigned dentist {dentist_id} to patient {patient_id}")
+
+        return {
+            "patient_id": patient_id,
+            "dentist_id": dentist_id,
+            "assignment_reason": assignment_reason.value,
+            "assignment_date": patient.dentist_assignment_date,
+        }
+
+    async def reassign_patient_to_dentist(
+        self,
+        db: AsyncSession,
+        patient_id: UUID,
+        new_dentist_id: UUID,
+        assignment_reason: AssignmentReason,
+        reassigned_by: UUID,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Reassign patient to a different dentist"""
+        # Get patient
+        patient = await self.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Validate new dentist
+        await self._validate_dentist_assignment(db, new_dentist_id, patient.tenant_id)
+
+        # Update patient assignment
+        previous_dentist_id = patient.assigned_dentist_id
+        patient.assigned_dentist_id = new_dentist_id
+        patient.assignment_reason = assignment_reason
+        patient.dentist_assignment_date = datetime.utcnow()
+        patient.updated_by = reassigned_by
+
+        await db.commit()
+        await db.refresh(patient)
+
+        logger.info(
+            f"Reassigned patient {patient_id} from {previous_dentist_id} to {new_dentist_id}"
+        )
+
+        return {
+            "patient_id": patient_id,
+            "dentist_id": new_dentist_id,
+            "assignment_reason": assignment_reason.value,
+            "assignment_date": patient.dentist_assignment_date,
+        }
+
+    async def remove_dentist_assignment(
+        self, db: AsyncSession, patient_id: UUID, removed_by: UUID
+    ) -> None:
+        """Remove dentist assignment from patient"""
+        # Get patient
+        patient = await self.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Remove assignment
+        patient.assigned_dentist_id = None
+        patient.assignment_reason = None
+        patient.dentist_assignment_date = None
+        patient.updated_by = removed_by
+
+        await db.commit()
+
+        logger.info(f"Removed dentist assignment from patient {patient_id}")
+
+    async def auto_assign_dentist(
+        self,
+        db: AsyncSession,
+        patient_id: UUID,
+        assignment_reason: str,
+        assigned_by: UUID,
+    ) -> Dict[str, Any]:
+        """Auto-assign the least busy available dentist to a patient"""
+        # Get patient
+        patient = await self.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Find the least busy available dentist
+        available_dentists = await self._get_available_dentists_with_workload(
+            db, patient.tenant_id
+        )
+
+        if not available_dentists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No available dentists found",
+            )
+
+        # Find dentist with minimum utilization
+        available_dentists.sort(key=lambda x: x["utilization"])
+        best_dentist = available_dentists[0]
+
+        # Assign the dentist
+        patient.assigned_dentist_id = best_dentist["id"]
+        patient.assignment_reason = AssignmentReason(assignment_reason)
+        patient.dentist_assignment_date = datetime.utcnow()
+        patient.updated_by = assigned_by
+
+        await db.commit()
+        await db.refresh(patient)
+
+        logger.info(
+            f"Auto-assigned dentist {best_dentist['id']} to patient {patient_id}"
+        )
+
+        return {
+            "patient_id": patient_id,
+            "dentist_id": best_dentist["id"],
+            "assignment_reason": assignment_reason,
+            "assignment_date": patient.dentist_assignment_date,
+        }
+
+    async def _get_available_dentists_with_workload(
+        self, db: AsyncSession, tenant_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Get available dentists with their current workload"""
+        try:
+            # Get all active dentists
+            result = await db.execute(
+                select(User).where(
+                    User.tenant_id == tenant_id,
+                    User.role == StaffRole.DENTIST,
+                    User.is_active == True,
+                    User.is_available == True,
+                )
+            )
+            dentists = result.scalars().all()
+
+            available_dentists = []
+            for dentist in dentists:
+                # Count assigned patients
+                patient_count_result = await db.execute(
+                    select(func.count()).where(
+                        Patient.assigned_dentist_id == dentist.id,
+                        Patient.status == PatientStatus.ACTIVE,
+                    )
+                )
+                current_patient_count = patient_count_result.scalar()
+
+                max_patients = dentist.max_patients or 50
+                utilization = (
+                    (current_patient_count / max_patients) * 100
+                    if max_patients > 0
+                    else 0
+                )
+
+                # Only include dentists with capacity
+                if current_patient_count < max_patients:
+                    available_dentists.append(
+                        {
+                            "id": dentist.id,
+                            "name": f"{dentist.first_name} {dentist.last_name}",
+                            "specialization": dentist.specialization,
+                            "current_patient_count": current_patient_count,
+                            "max_patients": max_patients,
+                            "utilization": utilization,
+                        }
+                    )
+
+            return available_dentists
+
+        except Exception as e:
+            logger.error(f"Error getting available dentists: {e}")
+            return []
+
+    async def _validate_dentist_assignment(
+        self, db: AsyncSession, dentist_id: UUID, tenant_id: UUID
+    ) -> None:
+        """Validate that a dentist can be assigned to a patient"""
+        # Check if dentist exists and is active
+        result = await db.execute(
+            select(User).where(
+                User.id == dentist_id,
+                User.tenant_id == tenant_id,
+                User.role == StaffRole.DENTIST,
+                User.is_active == True,
+            )
+        )
+        dentist = result.scalar_one_or_none()
+
+        if not dentist:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dentist not found or not available",
+            )
+
+        # Check if dentist is available for new patients
+        if not dentist.is_available:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Dentist is not currently available for new patients",
+            )
+
+        # Check workload
+        patient_count_result = await db.execute(
+            select(func.count()).where(
+                Patient.assigned_dentist_id == dentist_id,
+                Patient.status == PatientStatus.ACTIVE,
+            )
+        )
+        current_patient_count = patient_count_result.scalar()
+        max_patients = dentist.max_patients or 50
+
+        if current_patient_count >= max_patients:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Dentist has reached maximum patient capacity ({max_patients})",
+            )
+
+    async def get_dentist_workload(
+        self, db: AsyncSession, dentist_id: UUID
+    ) -> DentistWorkload:
+        """Get workload information for a specific dentist"""
+        # Get dentist
+        result = await db.execute(select(User).where(User.id == dentist_id))
+        dentist = result.scalar_one_or_none()
+
+        if not dentist or dentist.role != StaffRole.DENTIST:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dentist not found"
+            )
+
+        # Count assigned patients
+        patient_count_result = await db.execute(
+            select(func.count()).where(
+                Patient.assigned_dentist_id == dentist_id,
+                Patient.status == PatientStatus.ACTIVE,
+            )
+        )
+        current_patient_count = patient_count_result.scalar()
+
+        max_patients = dentist.max_patients or 50
+        workload_percentage = (
+            (current_patient_count / max_patients) * 100 if max_patients > 0 else 0
+        )
+        is_accepting_new_patients = (
+            dentist.is_available
+            and current_patient_count < max_patients
+            and dentist.is_active
+        )
+
+        return DentistWorkload(
+            dentist_id=dentist_id,
+            dentist_name=f"{dentist.first_name} {dentist.last_name}",
+            current_patient_count=current_patient_count,
+            max_patients=max_patients,
+            workload_percentage=workload_percentage,
+            is_accepting_new_patients=is_accepting_new_patients,
+            specialization=dentist.specialization,
+        )
+
+    async def get_all_dentists_workloads(
+        self, db: AsyncSession
+    ) -> List[DentistWorkload]:
+        """Get workload information for all dentists"""
+        try:
+            # Get all dentists
+            result = await db.execute(
+                select(User).where(User.role == StaffRole.DENTIST)
+            )
+            dentists = result.scalars().all()
+
+            workloads = []
+            for dentist in dentists:
+                # Count assigned patients
+                patient_count_result = await db.execute(
+                    select(func.count()).where(
+                        Patient.assigned_dentist_id == dentist.id,
+                        Patient.status == PatientStatus.ACTIVE,
+                    )
+                )
+                current_patient_count = patient_count_result.scalar()
+
+                max_patients = dentist.max_patients or 50
+                workload_percentage = (
+                    (current_patient_count / max_patients) * 100
+                    if max_patients > 0
+                    else 0
+                )
+                is_accepting_new_patients = (
+                    dentist.is_available
+                    and current_patient_count < max_patients
+                    and dentist.is_active
+                )
+
+                workloads.append(
+                    DentistWorkload(
+                        dentist_id=dentist.id,
+                        dentist_name=f"{dentist.first_name} {dentist.last_name}",
+                        current_patient_count=current_patient_count,
+                        max_patients=max_patients,
+                        workload_percentage=workload_percentage,
+                        is_accepting_new_patients=is_accepting_new_patients,
+                        specialization=dentist.specialization,
+                    )
+                )
+
+            return workloads
+
+        except Exception as e:
+            logger.error(f"Error getting all dentists workloads: {e}")
+            return []
+
+    async def get_patients_by_dentist(
+        self, db: AsyncSession, dentist_id: UUID, skip: int = 0, limit: int = 50
+    ) -> List[Patient]:
+        """Get all patients assigned to a specific dentist"""
+        try:
+            result = await db.execute(
+                select(Patient)
+                .where(
+                    Patient.assigned_dentist_id == dentist_id,
+                    Patient.status == PatientStatus.ACTIVE,
+                )
+                .offset(skip)
+                .limit(limit)
+                .order_by(Patient.last_name, Patient.first_name)
+            )
+            return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error getting patients by dentist: {e}")
+            return []
 
     async def search_patients(
         self,
