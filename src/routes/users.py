@@ -84,6 +84,18 @@ async def create_user(
             detail="Not authorized to create users",
         )
 
+    # Validate role-specific requirements
+    if user_data.role in [
+        StaffRole.DENTIST,
+        StaffRole.DENTAL_THERAPIST,
+        StaffRole.HYGIENIST,
+    ]:
+        if not user_data.specialization:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Specialization is required for dentist role",
+            )
+
     user = await auth_service.create_user(
         db=db,
         user_data=user_data,
@@ -91,7 +103,7 @@ async def create_user(
         tenant_id=current_user.tenant_id,
         create_default_user=False,
     )
-    return UserPublic.from_orm(user)
+    return UserPublic.from_orm_safe(user)
 
 
 @router.get(
@@ -152,6 +164,18 @@ async def update_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this user",
         )
+
+    # Validate role-specific requirements for dentists
+    if user_data.role in [
+        StaffRole.DENTIST,
+        StaffRole.DENTAL_THERAPIST,
+        StaffRole.HYGIENIST,
+    ]:
+        if not user_data.specialization:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Specialization is required for dentist role",
+            )
 
     user = await user_service.update_user(db, user_id, user_data)
     if not user:

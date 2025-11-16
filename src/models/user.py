@@ -30,6 +30,7 @@ class GenderEnum(str, PyEnum):
 class StaffRole(str, PyEnum):
     ADMIN = "admin"
     DENTIST = "dentist"
+    DENTAL_THERAPIST = "dental_therapist"
     HYGIENIST = "hygienist"
     ASSISTANT = "assistant"
     RECEPTIONIST = "receptionist"
@@ -56,6 +57,11 @@ class User(Base):
     specialization = Column(String(100), nullable=True)  # General, Orthodontics, etc.
     license_number = Column(String(50), nullable=True)
     employee_id = Column(String(50), nullable=True)
+
+    # Dentist-specific fields
+    max_patients = Column(Integer, default=50)  # Maximum patients per dentist
+    is_accepting_new_patients = Column(Boolean, default=True)
+    availability_schedule = Column(JSON, nullable=True)  # Work schedule as JSON
 
     # System Permissions
     permissions = Column(JSON, default=dict)
@@ -98,6 +104,19 @@ class User(Base):
         "PasswordResetToken", back_populates="user", cascade="all, delete-orphan"
     )
     login_attempts = relationship("LoginAttempt", back_populates="user", cascade="all")
+
+    # Dentist-specific relationships
+    assigned_patients = relationship(
+        "Patient",
+        back_populates="assigned_dentist",
+        foreign_keys="[Patient.assigned_dentist_id]",
+    )
+    preferred_by_patients = relationship(
+        "Patient",
+        back_populates="preferred_dentist",
+        foreign_keys="[Patient.preferred_dentist_id]",
+    )
+
     # As treating dentist
     appointments = relationship(
         "Appointment", back_populates="dentist", foreign_keys="[Appointment.dentist_id]"
@@ -141,6 +160,18 @@ class User(Base):
         if "temporary_password" not in settings:
             settings["temporary_password"] = True  # Default for new users
 
+        # Initialize dentist-specific fields
+        if kwargs.get("role") == StaffRole.DENTIST:
+            if "max_patients" not in kwargs:
+                kwargs["max_patients"] = 50
+            if "is_accepting_new_patients" not in kwargs:
+                kwargs["is_accepting_new_patients"] = True
+            if (
+                "availability_schedule" not in kwargs
+                or kwargs["availability_schedule"] is None
+            ):
+                kwargs["availability_schedule"] = {}
+
         kwargs["settings"] = settings
         super().__init__(**kwargs)
 
@@ -165,6 +196,22 @@ class User(Base):
         except Exception:
             return False  # Safe fallback
 
+    @property
+    def current_patient_count(self) -> int:
+        """Get current number of assigned patients"""
+        return (
+            len([p for p in self.assigned_patients if p.status == "active"])
+            if self.assigned_patients
+            else 0
+        )
+
+    @property
+    def workload_percentage(self) -> float:
+        """Calculate current workload percentage"""
+        if self.max_patients <= 0:
+            return 0.0
+        return (self.current_patient_count / self.max_patients) * 100
+
     def set_profile_picture(self, image_data: bytes, content_type: str):
         """Store profile picture in the database."""
         self.profile_picture = image_data
@@ -184,11 +231,17 @@ class User(Base):
                 "view_patients",
                 "create_treatments",
                 "manage_appointments",
+                "assign_patients",
+                "manage_own_patients",
             ],
             StaffRole.HYGIENIST: ["view_patients", "create_cleanings"],
             StaffRole.ASSISTANT: ["view_patients", "assist_treatments"],
-            StaffRole.RECEPTIONIST: ["manage_appointments", "view_patients"],
-            StaffRole.MANAGER: ["manage_users", "view_reports"],
+            StaffRole.RECEPTIONIST: [
+                "manage_appointments",
+                "view_patients",
+                "assign_patients",
+            ],
+            StaffRole.MANAGER: ["manage_users", "view_reports", "assign_patients"],
         }
         return "all" in role_permissions.get(
             self.role, []
