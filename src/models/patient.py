@@ -38,6 +38,15 @@ class InsuranceType(str, PyEnum):
     NONE = "none"
 
 
+class AssignmentReason(str, PyEnum):
+    AUTOMATIC = "automatic_assignment"
+    PATIENT_REQUEST = "patient_request"
+    WALK_IN = "walk_in"
+    SPECIALIZATION = "specialization_required"
+    FOLLOW_UP = "follow_up_care"
+    EMERGENCY = "emergency_case"
+
+
 class Patient(Base):
     __tablename__ = "patients"
 
@@ -57,6 +66,16 @@ class Patient(Base):
     address = Column(Text, nullable=False)
     emergency_contact_name = Column(String(100), nullable=True)
     emergency_contact_phone = Column(String(20), nullable=True)
+
+    # Dentist assignment fields
+    assigned_dentist_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    assignment_reason = Column(Enum(AssignmentReason), nullable=True)
+    dentist_assignment_date = Column(DateTime(timezone=True), nullable=True)
+    preferred_dentist_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
 
     # Medical information
     medical_history = Column(JSON, default=dict)  # Allergies, conditions, medications
@@ -87,6 +106,16 @@ class Patient(Base):
     )
     updated_by_user = relationship(
         "User", back_populates="updated_patients", foreign_keys=[updated_by]
+    )
+
+    # Dentist relationships
+    assigned_dentist = relationship(
+        "User", back_populates="assigned_patients", foreign_keys=[assigned_dentist_id]
+    )
+    preferred_dentist = relationship(
+        "User",
+        back_populates="preferred_by_patients",
+        foreign_keys=[preferred_dentist_id],
     )
 
     # Clinical relationships
