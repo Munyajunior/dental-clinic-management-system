@@ -47,6 +47,7 @@ from routes import (
     password_reset_router,
     public_router,
     sessions_router,
+    patient_assignment_router,
 )
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
@@ -159,8 +160,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # await initialize_database()
 
         # Database check
-        await check_db_connection()
-        if check_db_connection:
+        connected = await check_db_connection()
+        if connected:
             logger.info("Database connection verified")
 
         # Create initial tenant for development
@@ -247,6 +248,7 @@ app.include_router(settings_router, prefix=settings.API_PREFIX)
 app.include_router(password_reset_router, prefix=settings.API_PREFIX)
 app.include_router(public_router, prefix=settings.API_PREFIX)
 app.include_router(sessions_router, prefix=settings.API_PREFIX)
+app.include_router(patient_assignment_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
