@@ -1,7 +1,7 @@
 # src/services/patient_service.py
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from fastapi import HTTPException, status
@@ -54,7 +54,7 @@ class PatientService(BaseService):
                 await self._validate_dentist_assignment(
                     db, patient_data.assigned_dentist_id, patient_data.tenant_id
                 )
-                patient_dict["dentist_assignment_date"] = datetime.utcnow()
+                patient_dict["dentist_assignment_date"] = datetime.now(timezone.utc)
 
             # DEBUG: Check what we're creating
             logger.debug(f"Patient dict before creation: {patient_dict}")
@@ -120,7 +120,7 @@ class PatientService(BaseService):
         # Update patient assignment
         patient.assigned_dentist_id = dentist_id
         patient.assignment_reason = assignment_reason
-        patient.dentist_assignment_date = datetime.utcnow()
+        patient.dentist_assignment_date = datetime.now(timezone.utc)
         patient.updated_by = assigned_by
 
         await db.commit()
@@ -159,7 +159,7 @@ class PatientService(BaseService):
         previous_dentist_id = patient.assigned_dentist_id
         patient.assigned_dentist_id = new_dentist_id
         patient.assignment_reason = assignment_reason
-        patient.dentist_assignment_date = datetime.utcnow()
+        patient.dentist_assignment_date = datetime.now(timezone.utc)
         patient.updated_by = reassigned_by
 
         await db.commit()
@@ -230,7 +230,7 @@ class PatientService(BaseService):
         # Assign the dentist
         patient.assigned_dentist_id = best_dentist["id"]
         patient.assignment_reason = AssignmentReason(assignment_reason)
-        patient.dentist_assignment_date = datetime.utcnow()
+        patient.dentist_assignment_date = datetime.now(timezone.utc)
         patient.updated_by = assigned_by
 
         await db.commit()
@@ -522,7 +522,7 @@ class PatientService(BaseService):
         """Update patient's last visit timestamp"""
         patient = await self.get(db, patient_id)
         if patient:
-            patient.last_visit_at = datetime.utcnow()
+            patient.last_visit_at = datetime.now(timezone.utc)
             await db.commit()
             logger.debug(f"Updated last visit for patient: {patient_id}")
 
