@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from fastapi import HTTPException, status
 from models.user import User, StaffRole
-from schemas.user_schemas import UserCreate, UserUpdate, UserSearch
+from schemas.user_schemas import UserCreate, UserUpdate, UserSearch, UserWorkSchedule
 from utils.logger import setup_logger
 from .base_service import BaseService
 from .auth_service import auth_service, password_policy_service
@@ -63,8 +63,30 @@ class UserService(BaseService):
             )
 
         update_data = user_data.model_dump(exclude_unset=True)
+
+        # Handle work_schedule conversion
+        if "work_schedule" in update_data and update_data["work_schedule"]:
+            if isinstance(update_data["work_schedule"], UserWorkSchedule):
+                update_data["work_schedule"] = update_data["work_schedule"].model_dump()
+
         for field, value in update_data.items():
-            setattr(user, field, value)
+            if hasattr(user, field):
+                setattr(user, field, value)
+
+        # Special handling for dentist role
+        if user.role in [
+            StaffRole.DENTIST,
+            StaffRole.DENTAL_THERAPIST,
+            StaffRole.HYGIENIST,
+        ]:
+            # Ensure dentist-specific fields are set
+            if update_data.get("max_patients") is None and user.max_patients is None:
+                setattr(user, "max_patients", 50)
+            if (
+                update_data.get("is_accepting_new_patients") is None
+                and user.is_accepting_new_patients is None
+            ):
+                setattr(user, "is_accepting_new_patients", True)
 
         await db.commit()
         await db.refresh(user)
