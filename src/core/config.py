@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator, model_validator
+
+from sqlalchemy.engine import URL
 from typing import List
 from dotenv import load_dotenv
 
@@ -94,6 +96,15 @@ class Settings(BaseSettings):
             if self.SQLITE_MODE
             else self.POSTGRESQL_DATABASE_URL
         )
+
+    @property
+    def SYNC_DATABASE_URL(self) -> str:
+        """Convert async URL to sync URL for Alembic"""
+        if "postgresql+asyncpg" in self.DATABASE_URL:
+            return self.DATABASE_URL.replace("postgresql+asyncpg", "postgresql")
+        elif "postgresql" in self.DATABASE_URL:
+            return self.DATABASE_URL.replace("postgresql", "postgresql")
+        return self.DATABASE_URL
 
     @property
     def REDIS_CACHE_URL(self) -> str:
