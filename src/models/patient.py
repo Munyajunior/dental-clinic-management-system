@@ -45,6 +45,7 @@ class AssignmentReason(str, PyEnum):
     SPECIALIZATION = "specialization_required"
     FOLLOW_UP = "follow_up_care"
     EMERGENCY = "emergency_case"
+    TRANSFER = "transfer"
 
 
 class Patient(Base):
