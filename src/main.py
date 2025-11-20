@@ -48,11 +48,12 @@ from routes import (
     public_router,
     sessions_router,
     patient_assignment_router,
+    patient_sharing_router,
+    treatment_templates_router,
 )
 from middleware.tenant_middleware import TenantMiddleware
 from dependencies.tenant_deps import get_current_tenant
 from utils.database_migration import verify_table_structure, add_missing_columns
-from services.email_service import email_service
 
 # Disable specific loggers
 for log in ["watchfiles", "uvicorn.error", "uvicorn.access", "uvicorn.asgi"]:
@@ -249,6 +250,8 @@ app.include_router(password_reset_router, prefix=settings.API_PREFIX)
 app.include_router(public_router, prefix=settings.API_PREFIX)
 app.include_router(sessions_router, prefix=settings.API_PREFIX)
 app.include_router(patient_assignment_router, prefix=settings.API_PREFIX)
+app.include_router(patient_sharing_router, prefix=settings.API_PREFIX)
+app.include_router(treatment_templates_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
