@@ -13,6 +13,7 @@ from sqlalchemy import (
     JSON,
     Integer,
 )
+import json
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -142,29 +143,62 @@ class User(Base):
         # Ensure work_schedule is always a dict
         if "work_schedule" not in kwargs or kwargs["work_schedule"] is None:
             kwargs["work_schedule"] = {}
+        elif isinstance(kwargs["work_schedule"], str):
+            # Handle case where it might be stored as JSON string
+            try:
+                kwargs["work_schedule"] = json.loads(kwargs["work_schedule"])
+            except:
+                kwargs["work_schedule"] = {}
 
-        # Ensure settings is always a dict
+        # Ensure settings is always a dict - FIXED VERSION
         if "settings" not in kwargs or kwargs["settings"] is None:
             kwargs["settings"] = {}
+        elif isinstance(kwargs["settings"], str):
+            try:
+                kwargs["settings"] = json.loads(kwargs["settings"])
+            except:
+                kwargs["settings"] = {}
 
         # Ensure permissions is always a dict
         if "permissions" not in kwargs or kwargs["permissions"] is None:
             kwargs["permissions"] = {}
+        elif isinstance(kwargs["permissions"], str):
+            try:
+                kwargs["permissions"] = json.loads(kwargs["permissions"])
+            except:
+                kwargs["permissions"] = {}
 
-        # Initialize required settings fields if not present
+        # Initialize required settings fields if not present - FIXED VERSION
         settings = kwargs["settings"]
-        if "password_changed_at" not in settings:
-            settings["password_changed_at"] = datetime.now(timezone.utc).isoformat()
-        if "login_count" not in settings:
-            settings["login_count"] = 0
-        if "temporary_password" not in settings:
-            settings["temporary_password"] = True  # Default for new users
+        if not isinstance(settings, dict):
+            settings = {}
+
+        # Set security defaults safely
+        security_defaults = {
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "login_count": 0,
+            "temporary_password": True,
+            "force_password_reset": True,
+        }
+
+        for key, default_value in security_defaults.items():
+            if key not in settings:
+                settings[key] = default_value
+
+        kwargs["settings"] = settings
 
         # Initialize dentist-specific fields
-        if kwargs.get("role") == StaffRole.DENTIST:
-            if "max_patients" not in kwargs:
+        if kwargs.get("role") in [
+            StaffRole.DENTIST,
+            StaffRole.DENTAL_THERAPIST,
+            StaffRole.HYGIENIST,
+        ]:
+            if "max_patients" not in kwargs or kwargs["max_patients"] is None:
                 kwargs["max_patients"] = 50
-            if "is_accepting_new_patients" not in kwargs:
+            if (
+                "is_accepting_new_patients" not in kwargs
+                or kwargs["is_accepting_new_patients"] is None
+            ):
                 kwargs["is_accepting_new_patients"] = True
             if (
                 "availability_schedule" not in kwargs
@@ -172,7 +206,13 @@ class User(Base):
             ):
                 kwargs["availability_schedule"] = {}
 
-        kwargs["settings"] = settings
+        # Ensure other required fields have defaults
+        kwargs.setdefault("is_active", True)
+        kwargs.setdefault("is_verified", False)
+        kwargs.setdefault("is_available", True)
+        kwargs.setdefault("login_count", 0)
+        kwargs.setdefault("failed_login_attempts", 0)
+
         super().__init__(**kwargs)
 
     @property
