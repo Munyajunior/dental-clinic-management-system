@@ -3,9 +3,10 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import date, datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, update
 from fastapi import HTTPException, status
 from models.patient import Patient, PatientStatus, AssignmentReason
+from models.patient_sharing import PatientSharing
 from models.user import User, StaffRole
 from schemas.patient_schemas import (
     PatientCreate,
@@ -563,6 +564,226 @@ class PatientService(BaseService):
         except Exception as e:
             logger.error(f"Error getting patient stats: {e}")
             return {}
+
+    async def share_patient(
+        self,
+        db: AsyncSession,
+        patient_id: UUID,
+        shared_with_dentist_id: UUID,
+        permission_level: str,
+        shared_by_dentist_id: UUID,
+        expires_at: Optional[datetime] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Share a patient with another dental professional"""
+        # Get patient
+        patient = await self.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Verify sharing dentist is assigned to patient
+        if patient.assigned_dentist_id != shared_by_dentist_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the assigned dental professional can share this patient",
+            )
+
+        # Validate target dentist
+        await self._validate_dentist_assignment(
+            db, shared_with_dentist_id, patient.tenant_id
+        )
+
+        # Check if sharing already exists
+        existing_sharing = await db.execute(
+            select(PatientSharing).where(
+                PatientSharing.patient_id == patient_id,
+                PatientSharing.shared_with_dentist_id == shared_with_dentist_id,
+                PatientSharing.is_active == True,
+            )
+        )
+        if existing_sharing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Patient is already shared with this dental professional",
+            )
+
+        # Create sharing record
+        sharing = PatientSharing(
+            tenant_id=patient.tenant_id,
+            patient_id=patient_id,
+            shared_by_dentist_id=shared_by_dentist_id,
+            shared_with_dentist_id=shared_with_dentist_id,
+            permission_level=permission_level,
+            expires_at=expires_at,
+            notes=notes,
+        )
+
+        db.add(sharing)
+        await db.commit()
+        await db.refresh(sharing)
+
+        logger.info(
+            f"Shared patient {patient_id} with dentist {shared_with_dentist_id}"
+        )
+
+        return {
+            "success": True,
+            "sharing_id": sharing.id,
+            "patient_id": patient_id,
+            "shared_with_dentist_id": shared_with_dentist_id,
+            "permission_level": permission_level,
+        }
+
+    async def revoke_patient_sharing(
+        self,
+        db: AsyncSession,
+        sharing_id: UUID,
+        revoked_by_dentist_id: UUID,
+    ) -> Dict[str, Any]:
+        """Revoke patient sharing"""
+
+        sharing = await db.execute(
+            select(PatientSharing).where(PatientSharing.id == sharing_id)
+        )
+        sharing = sharing.scalar_one_or_none()
+
+        if not sharing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Sharing record not found"
+            )
+
+        # Verify revoker has permission (either original sharer or admin)
+        current_user_result = await db.execute(
+            select(User).where(User.id == revoked_by_dentist_id)
+        )
+        current_user = current_user_result.scalar_one_or_none()
+
+        if (
+            current_user.role != "admin"
+            and sharing.shared_by_dentist_id != revoked_by_dentist_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the original sharer or admin can revoke sharing",
+            )
+
+        sharing.is_active = False
+        await db.commit()
+
+        logger.info(f"Revoked patient sharing: {sharing_id}")
+
+        return {"success": True, "message": "Patient sharing revoked successfully"}
+
+    async def get_shared_patients(
+        self,
+        db: AsyncSession,
+        dentist_id: UUID,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Get patients shared with a dental professional"""
+
+        result = await db.execute(
+            select(PatientSharing, Patient)
+            .join(Patient, PatientSharing.patient_id == Patient.id)
+            .where(
+                PatientSharing.shared_with_dentist_id == dentist_id,
+                PatientSharing.is_active == True,
+                Patient.status == PatientStatus.ACTIVE,
+                or_(
+                    PatientSharing.expires_at.is_(None),
+                    PatientSharing.expires_at > datetime.now(timezone.utc),
+                ),
+            )
+            .offset(skip)
+            .limit(limit)
+        )
+
+        shared_patients = []
+        for sharing, patient in result.all():
+            shared_patients.append(
+                {
+                    "sharing_id": sharing.id,
+                    "patient": patient,
+                    "permission_level": sharing.permission_level,
+                    "shared_by_dentist_id": sharing.shared_by_dentist_id,
+                    "shared_at": sharing.created_at,
+                    "expires_at": sharing.expires_at,
+                }
+            )
+
+        return shared_patients
+
+    async def transfer_patient(
+        self,
+        db: AsyncSession,
+        patient_id: UUID,
+        new_dentist_id: UUID,
+        transfer_reason: str,
+        transferred_by: UUID,
+    ) -> Dict[str, Any]:
+        """Transfer patient to another dental professional"""
+        # Get patient
+        patient = await self.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Verify transferrer has permission
+        current_user_result = await db.execute(
+            select(User).where(User.id == transferred_by)
+        )
+        current_user = current_user_result.scalar_one_or_none()
+
+        if (
+            current_user.role != "admin"
+            and patient.assigned_dentist_id != transferred_by
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the assigned dental professional or admin can transfer this patient",
+            )
+
+        # Validate new dentist
+        await self._validate_dentist_assignment(db, new_dentist_id, patient.tenant_id)
+
+        # Store previous assignment for audit
+        previous_dentist_id = patient.assigned_dentist_id
+
+        # Update patient assignment
+        patient.assigned_dentist_id = new_dentist_id
+        patient.assignment_reason = AssignmentReason.TRANSFER
+        patient.dentist_assignment_date = datetime.now(timezone.utc)
+        patient.updated_by = transferred_by
+
+        # Deactivate any active sharing records for this patient
+        await db.execute(
+            update(PatientSharing)
+            .where(
+                PatientSharing.patient_id == patient_id,
+                PatientSharing.is_active == True,
+            )
+            .values(is_active=False)
+        )
+
+        await db.commit()
+        await db.refresh(patient)
+
+        logger.info(
+            f"Transferred patient {patient_id} from {previous_dentist_id} to {new_dentist_id}"
+        )
+
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "previous_dentist_id": previous_dentist_id,
+            "new_dentist_id": new_dentist_id,
+            "transfer_reason": transfer_reason,
+            "transferred_at": patient.dentist_assignment_date,
+        }
 
 
 patient_service = PatientService()
