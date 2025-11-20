@@ -25,7 +25,7 @@ class UserBase(BaseSchema):
     first_name: str
     last_name: str
     email: EmailStr
-    contact_number: str
+    contact_number: Optional[str] = None
     date_of_birth: Optional[date] = None
     gender: GenderEnum
     role: StaffRole
@@ -33,16 +33,22 @@ class UserBase(BaseSchema):
     license_number: Optional[str] = None
     employee_id: Optional[str] = None
 
+    # Dentist-specific fields
+    max_patients: Optional[int] = 50
+    is_accepting_new_patients: Optional[bool] = True
+    availability_schedule: Optional[Dict[str, Any]] = None
+
+    # Professional settings
+    work_schedule: Optional[UserWorkSchedule] = None
+    settings: Optional[Dict[str, Any]] = None
+    permissions: Optional[Dict[str, Any]] = None
+
 
 class UserCreate(UserBase):
     """Schema for creating a user"""
 
     password: str
     is_active: bool = True
-    work_schedule: Optional[UserWorkSchedule] = None
-    permissions: Dict[str, Any]
-    contact_number: Optional[str] = None
-    date_of_birth: Optional[date] = None
 
     @field_validator("password")
     @classmethod
@@ -61,6 +67,26 @@ class UserCreate(UserBase):
     def set_default_gender(cls, v: Optional[GenderEnum]) -> GenderEnum:
         return v or GenderEnum.OTHER
 
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def validate_permissions(cls, v):
+        """Ensure permissions is always a dict"""
+        return v or {}
+
+    @field_validator("settings", mode="before")
+    @classmethod
+    def validate_settings(cls, v):
+        """Ensure settings is always a dict"""
+        return v or {}
+
+    @field_validator("work_schedule", mode="before")
+    @classmethod
+    def validate_work_schedule(cls, v):
+        """Ensure work_schedule is properly structured"""
+        if v is None:
+            return UserWorkSchedule()
+        return v
+
 
 class UserUpdate(BaseSchema):
     """Schema for updating a user"""
@@ -77,9 +103,26 @@ class UserUpdate(BaseSchema):
     employee_id: Optional[str] = None
     is_active: Optional[bool] = None
     is_available: Optional[bool] = None
+
+    max_patients: Optional[int] = None
+    is_accepting_new_patients: Optional[bool] = None
+    availability_schedule: Optional[Dict[str, Any]] = None
     work_schedule: Optional[UserWorkSchedule] = None
     settings: Optional[Dict[str, Any]] = None
     permissions: Optional[Dict[str, Any]] = None
+    profile_picture: Optional[str] = None
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def validate_permissions(cls, v):
+        """Ensure permissions is always a dict"""
+        return v or {}
+
+    @field_validator("settings", mode="before")
+    @classmethod
+    def validate_settings(cls, v):
+        """Ensure settings is always a dict"""
+        return v or {}
 
 
 class UserInDB(IDMixin, TenantMixin, UserBase, TimestampMixin):
@@ -106,12 +149,14 @@ class UserPublic(BaseSchema):
     specialization: Optional[str] = None
     is_active: bool
     is_verified: bool
-    is_available: bool
     work_schedule: Dict[str, Any] = {}
     settings: Dict[str, Any] = {}
     permissions: Dict[str, Any] = {}
     last_login_at: Optional[datetime] = None
     profile_picture: Optional[str] = None
+    max_patients: Optional[int] = 50
+    is_available: Optional[bool] = True
+    current_patient_count: Optional[int] = 0  # For frontend workload display
 
     @classmethod
     def from_orm_safe(cls, user: Any) -> "UserPublic":
