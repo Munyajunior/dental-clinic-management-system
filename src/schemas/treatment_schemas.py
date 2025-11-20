@@ -1,5 +1,5 @@
 # src/schemas/treatment_schemas.py
-from pydantic import field_validator
+from pydantic import field_validator, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
@@ -149,3 +149,169 @@ class TreatmentItemPublic(BaseSchema):
     status: str
     tooth_number: Optional[str] = None
     surface: Optional[str] = None
+
+
+class TreatmentSearch(BaseSchema):
+    """Schema for treatment search"""
+
+    query: str
+    skip: int = 0
+    limit: int = 50
+
+
+class TreatmentBulkUpdate(BaseSchema):
+    """Schema for bulk treatment updates"""
+
+    updates: List[Dict[str, Any]]
+
+
+class TreatmentExport(BaseSchema):
+    """Schema for treatment export"""
+
+    format: str = "csv"
+    filters: Optional[Dict[str, Any]] = None
+
+
+class TreatmentAnalytics(BaseSchema):
+    """Schema for treatment analytics"""
+
+    total_treatments: int
+    completed_treatments: int
+    in_progress_treatments: int
+    planned_treatments: int
+    cancelled_treatments: int
+    average_completion_time: Optional[float] = None
+    revenue_total: Decimal
+    revenue_by_status: Dict[str, Decimal]
+    treatments_by_month: Dict[str, int]
+    top_services: List[Dict[str, Any]]
+
+
+class TreatmentTemplate(BaseSchema):
+    """Schema for treatment templates"""
+
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    category: str
+    treatment_items: List[Dict[str, Any]]
+    estimated_cost: Decimal
+    estimated_duration: int  # in minutes
+    is_active: bool = True
+    created_by: UUID
+    created_at: datetime
+
+
+class TreatmentStats(BaseSchema):
+    """Schema for treatment statistics"""
+
+    total_count: int
+    by_status: Dict[str, int]
+    by_priority: Dict[str, int]
+    average_cost: Decimal
+    completion_rate: float
+    recent_treatments: int
+
+
+class TreatmentTemplateItemBase(BaseSchema):
+    """Base schema for treatment template items"""
+
+    service_id: UUID
+    quantity: int = 1
+    tooth_number: Optional[str] = None
+    surface: Optional[str] = None
+    notes: Optional[str] = None
+    order_index: int = 0
+
+
+class TreatmentTemplateItemCreate(TreatmentTemplateItemBase):
+    """Schema for creating treatment template items"""
+
+    pass
+
+
+class TreatmentTemplateItemPublic(TreatmentTemplateItemBase):
+    """Public schema for treatment template items"""
+
+    id: UUID
+    template_id: UUID
+    service_name: Optional[str] = None
+    service_code: Optional[str] = None
+    unit_price: Optional[Decimal] = None
+
+
+class TreatmentTemplateBase(BaseSchema):
+    """Base schema for treatment templates"""
+
+    name: str
+    description: Optional[str] = None
+    category: str
+    estimated_cost: Optional[Decimal] = None
+    estimated_duration: Optional[int] = None
+    is_active: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not v or len(v.strip()) < 2:
+            raise ValueError("Template name must be at least 2 characters long")
+        if len(v) > 200:
+            raise ValueError("Template name cannot exceed 200 characters")
+        return v.strip()
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        if not v or len(v.strip()) < 2:
+            raise ValueError("Category must be at least 2 characters long")
+        return v.strip()
+
+
+class TreatmentTemplateCreate(TreatmentTemplateBase):
+    """Schema for creating treatment templates"""
+
+    template_items: List[TreatmentTemplateItemCreate] = []
+
+
+class TreatmentTemplateUpdate(BaseSchema):
+    """Schema for updating treatment templates"""
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    estimated_cost: Optional[Decimal] = None
+    estimated_duration: Optional[int] = None
+    is_active: Optional[bool] = None
+    template_items: Optional[List[TreatmentTemplateItemCreate]] = None
+
+
+class TreatmentTemplateT(TreatmentTemplateBase):
+    """Complete treatment template schema"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    created_by: UUID
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    template_items: List[TreatmentTemplateItemPublic] = []
+
+    # Computed fields
+    created_by_name: Optional[str] = None
+    items_count: Optional[int] = None
+
+
+class TreatmentTemplateSearch(BaseSchema):
+    """Schema for template search"""
+
+    query: str
+    category: Optional[str] = None
+    skip: int = 0
+    limit: int = 50
+
+
+class TreatmentTemplateExport(BaseSchema):
+    """Schema for template export"""
+
+    format: str = "json"
+    category: Optional[str] = None
