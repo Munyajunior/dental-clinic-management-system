@@ -64,6 +64,9 @@ async def create_service(
             detail="Not authorized to create services",
         )
 
+    if not service_data.tenant_id:
+        service_data.tenant_id = current_user.tenant_id
+
     service = await service_service.create_service(db, service_data)
     return ServicePublic.from_orm(service)
 
