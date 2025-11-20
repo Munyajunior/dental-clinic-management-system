@@ -24,6 +24,7 @@ from .auth import (
     SecurityEvent,
     UserSession,
 )
+from .treatment_template import TreatmentTemplate, TreatmentTemplateItem
 
 # Now configure relationships that require cross-references
 from sqlalchemy.orm import configure_mappers, relationship
@@ -59,4 +60,6 @@ __all__ = [
     "LoginAttempt",
     "SecurityEvent",
     "UserSession",
+    "TreatmentTemplate",
+    "TreatmentTemplateItem",
 ]
