@@ -7,7 +7,8 @@ from typing import Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import text
+from sqlalchemy import text, create_engine
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 from utils.logger import setup_logger
 
@@ -60,6 +61,38 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
     future=True,
 )
+
+
+# Sync engine for Alembic migrations
+sync_engine = create_engine(
+    settings.SYNC_DATABASE_URL,
+    echo=settings.DEBUG,
+    pool_size=20,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=3600,
+    pool_pre_ping=True,
+)
+
+# Sync session factory
+SessionLocal = sessionmaker(
+    bind=sync_engine,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+)
+
+
+def get_sync_db():
+    """
+    Synchronous database session for Alembic migrations
+    """
+    db = SessionLocal()
+    try:
+        return db
+    finally:
+        db.close()
+
 
 # Base class for models
 Base = declarative_base()
@@ -238,6 +271,8 @@ async def setup_rls():
             "newsletter_subscriptions",
             "security_events",
             "user_sessions",
+            "patient_sharing",
+            "treatment_templates",
         ]
 
         for table in tables_with_tenant:
