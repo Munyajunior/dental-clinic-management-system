@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from fastapi import HTTPException, status
-from models.tenant import Tenant, TenantTier, TenantStatus
+from models.tenant import (
+    Tenant,
+    TenantTier,
+    TenantStatus,
+    TenantPaymentStatus,
+    BillingCycle,
+)
 from schemas.tenant_schemas import TenantCreate, TenantUpdate, TenantStats
 from models.user import User
 from models.patient import Patient
@@ -69,26 +75,59 @@ class TenantService(BaseService):
             if existing_tenant:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Tenant with this slug already exists",
+                    detail="A clinic with this URL already exists. Please choose a different clinic name or URL.",
                 )
 
-            # Create tenant
-            tenant = Tenant(**tenant_data.model_dump())
+            # Create tenant with proper defaults
+            tenant_dict = tenant_data.model_dump()
+
+            # Ensure proper defaults for tenant
+            tenant_dict.setdefault("tier", TenantTier.BASIC)
+            tenant_dict.setdefault("payment_status", TenantPaymentStatus.PENDING)
+            tenant_dict.setdefault("status", TenantStatus.ACTIVE)
+            tenant_dict.setdefault("billing_cycle", BillingCycle.MONTHLY)
+            tenant_dict.setdefault("max_users", 5)
+            tenant_dict.setdefault("max_patients", 1000)
+            tenant_dict.setdefault("max_storage_gb", 1)
+            tenant_dict.setdefault("max_api_calls_per_month", 10000)
+            tenant_dict.setdefault("current_user_count", 0)
+            tenant_dict.setdefault("current_patient_count", 0)
+            tenant_dict.setdefault("current_storage_gb", 0.0)
+            tenant_dict.setdefault("current_api_calls_this_month", 0)
+            tenant_dict.setdefault("isolation_level", "shared")
+            tenant_dict.setdefault("enabled_features", {})
+            tenant_dict.setdefault("settings", {})
+            tenant_dict.setdefault("restrictions", {})
+
+            tenant = Tenant(**tenant_dict)
             db.add(tenant)
             await db.commit()  # Commit to get the tenant ID
             await db.refresh(tenant)
 
             logger.info(f"Created tenant: {tenant.name} with ID: {tenant.id}")
 
-            # Create admin user for the tenant WITH the tenant_id
-            admin_user = await auth_service.create_tenant_admin_user(
-                db, tenant, tenant_data.contact_email, background_tasks
-            )
+            try:
+                # Create admin user for the tenant WITH the tenant_id
+                admin_user = await auth_service.create_tenant_admin_user(
+                    db, tenant, tenant_data.contact_email, background_tasks
+                )
 
-            logger.info(
-                f"Created tenant {tenant.name} with admin user {admin_user.email}"
-            )
-            return tenant
+                logger.info(
+                    f"Created tenant {tenant.name} with admin user {admin_user.email}"
+                )
+                return tenant
+
+            except Exception as user_error:
+                # If user creation fails, delete the tenant and rollback
+                await db.delete(tenant)
+                await db.commit()
+                logger.error(
+                    f"Failed to create admin user, rolled back tenant creation: {user_error}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create clinic administrator account. Please try again.",
+                )
 
         except HTTPException:
             await db.rollback()
