@@ -21,7 +21,7 @@ router = APIRouter(prefix="/consultations", tags=["consultations"])
     "/",
     response_model=List[ConsultationPublic],
     summary="List consultations",
-    description="Get list of consultations",
+    description="Get list of consultations that the user is authorized to view",
 )
 async def list_consultations(
     skip: int = 0,
@@ -31,12 +31,22 @@ async def list_consultations(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """List consultations endpoint"""
+    """List consultations endpoint - only shows consultations user is authorized to see"""
     filters = {}
     if patient_id:
         filters["patient_id"] = patient_id
     if dentist_id:
+        # Non-admin users can only filter by their own ID
+        if current_user.role != "admin" and dentist_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view your own consultations",
+            )
         filters["dentist_id"] = dentist_id
+    else:
+        # If no dentist_id specified, non-admin users only see their own consultations
+        if current_user.role != "admin":
+            filters["dentist_id"] = current_user.id
 
     consultations = await consultation_service.get_multi(
         db, skip=skip, limit=limit, filters=filters
@@ -49,15 +59,17 @@ async def list_consultations(
     response_model=ConsultationPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Create consultation",
-    description="Create a new consultation record",
+    description="Create a new consultation record. User must be assigned to the patient.",
 )
 async def create_consultation(
     consultation_data: ConsultationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Create consultation endpoint"""
-    consultation = await consultation_service.create_consultation(db, consultation_data)
+    """Create consultation endpoint with authorization check"""
+    consultation = await consultation_service.create_consultation(
+        db, consultation_data, current_user
+    )
     return ConsultationPublic.from_orm(consultation)
 
 
@@ -65,18 +77,28 @@ async def create_consultation(
     "/{consultation_id}",
     response_model=ConsultationDetail,
     summary="Get consultation",
-    description="Get consultation details by ID",
+    description="Get consultation details by ID. User must be authorized to view this consultation.",
 )
 async def get_consultation(
     consultation_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Get consultation by ID endpoint"""
+    """Get consultation by ID endpoint with authorization check"""
     consultation = await consultation_service.get(db, consultation_id)
     if not consultation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Consultation not found"
+        )
+
+    # Check if user can view this consultation
+    can_view = await consultation_service._can_user_modify_consultation(
+        db, current_user, consultation
+    )
+    if not can_view:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to view this consultation",
         )
 
     consultation_detail = ConsultationDetail.from_orm(consultation)
@@ -94,7 +116,7 @@ async def get_consultation(
     "/{consultation_id}",
     response_model=ConsultationPublic,
     summary="Update consultation",
-    description="Update consultation information",
+    description="Update consultation information. User must be authorized to modify this consultation.",
 )
 async def update_consultation(
     consultation_id: UUID,
@@ -102,12 +124,64 @@ async def update_consultation(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Update consultation endpoint"""
-    consultation = await consultation_service.update(
-        db, consultation_id, consultation_data
-    )
+    """Update consultation endpoint with authorization check"""
+    consultation = await consultation_service.get(db, consultation_id)
     if not consultation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Consultation not found"
         )
-    return ConsultationPublic.from_orm(consultation)
+
+    # Check if user can modify this consultation
+    can_modify = await consultation_service._can_user_modify_consultation(
+        db, current_user, consultation
+    )
+    if not can_modify:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to modify this consultation",
+        )
+
+    updated_consultation = await consultation_service.update(
+        db, consultation_id, consultation_data
+    )
+    return ConsultationPublic.from_orm(updated_consultation)
+
+
+@router.get(
+    "/patient/{patient_id}",
+    response_model=List[ConsultationPublic],
+    summary="Get patient consultations",
+    description="Get all consultations for a specific patient that the user is authorized to view",
+)
+async def get_patient_consultations(
+    patient_id: UUID,
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Get patient consultations with authorization check"""
+    consultations = await consultation_service.get_patient_consultations(
+        db, patient_id, current_user, skip, limit
+    )
+    return [ConsultationPublic.from_orm(consultation) for consultation in consultations]
+
+
+@router.get(
+    "/dentist/{dentist_id}",
+    response_model=List[ConsultationPublic],
+    summary="Get dentist consultations",
+    description="Get all consultations for a specific dentist that the user is authorized to view",
+)
+async def get_dentist_consultations(
+    dentist_id: UUID,
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Get dentist consultations with authorization check"""
+    consultations = await consultation_service.get_dentist_consultations(
+        db, dentist_id, current_user, skip, limit
+    )
+    return [ConsultationPublic.from_orm(consultation) for consultation in consultations]
