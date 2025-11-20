@@ -370,6 +370,7 @@ async def enforced_password_reset_by_slug(
             role=user.role,
             specialization=user.specialization,
             is_active=user.is_active,
+            is_verified=user.is_verified,
             is_available=user.is_available,
             profile_picture=(
                 user.get_profile_picture_base64()
