@@ -17,6 +17,8 @@ from .settings import router as settings_router
 from .public import router as public_router
 from .sessions import router as sessions_router
 from .password_reset import router as password_reset_router
+from .patient_assignment import router as patient_assignment_router
+from .treatment_templates import router as treatment_templates_router
 
 __all__ = [
     "auth_router",
@@ -37,4 +39,6 @@ __all__ = [
     "public_router",
     "password_reset_router",
     "sessions_router",
+    "patient_assignment_router",
+    "treatment_templates_router",
 ]
