@@ -16,7 +16,7 @@ from models.user import StaffRole, GenderEnum
 from models.user import User
 from models.tenant import Tenant, TenantPaymentStatus, TenantTier, BillingCycle
 from models.auth import RefreshToken, LoginAttempt, UserSession
-from schemas.user_schemas import UserLogin, UserCreate
+from schemas.user_schemas import UserLogin, UserCreate, UserWorkSchedule
 from services.email_service import email_service
 from services.email_integration_service import email_integration_service
 from services.usage_service import UsageService
@@ -2519,18 +2519,34 @@ class AuthService:
             user_data_dict = user_data.model_dump(exclude={"password"})
             user_data_dict["hashed_password"] = hashed_password
 
-            # CRITICAL FIX: Proper tenant_id handling
+            # CRITICAL FIX: Proper tenant_id handling with UUID conversion
             final_tenant_id = None
             if tenant_id:
-                # Use provided tenant_id
-                final_tenant_id = UUID(tenant_id)
+                # Use provided tenant_id - ensure it's a proper UUID
+                try:
+                    final_tenant_id = self.safe_uuid_conversion(tenant_id)
+                except ValueError as e:
+                    logger.error(f"Invalid tenant_id format: {tenant_id}, error: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid tenant ID format",
+                    )
             else:
                 # Try to get tenant context from database session
                 from db.database import tenant_id_var
 
                 current_tenant_id = tenant_id_var.get()
                 if current_tenant_id:
-                    final_tenant_id = UUID(current_tenant_id)
+                    try:
+                        final_tenant_id = self.safe_uuid_conversion(current_tenant_id)
+                    except ValueError as e:
+                        logger.error(
+                            f"Invalid current_tenant_id format: {current_tenant_id}, error: {e}"
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid tenant context",
+                        )
                 else:
                     # For system operations (like tenant creation), we need tenant_id
                     raise HTTPException(
@@ -2546,24 +2562,90 @@ class AuthService:
 
             user_data_dict["tenant_id"] = final_tenant_id
 
-            # Initialize user settings with security defaults
-            user_data_dict["settings"] = user_data_dict.get("settings", {})
-            user_data_dict["settings"].update(
-                {
+            # Handle work_schedule conversion safely
+            if "work_schedule" in user_data_dict and user_data_dict["work_schedule"]:
+                if isinstance(user_data_dict["work_schedule"], UserWorkSchedule):
+                    user_data_dict["work_schedule"] = user_data_dict[
+                        "work_schedule"
+                    ].model_dump()
+
+            # Ensure proper defaults for dentist-specific fields
+            if user_data_dict.get("role") in [
+                StaffRole.DENTIST,
+                StaffRole.DENTAL_THERAPIST,
+                StaffRole.HYGIENIST,
+            ]:
+                user_data_dict.setdefault("max_patients", 50)
+                user_data_dict.setdefault("is_accepting_new_patients", True)
+                user_data_dict.setdefault("availability_schedule", {})
+
+            # CRITICAL FIX: Initialize settings properly
+            user_settings = user_data_dict.get("settings", {})
+            if not isinstance(user_settings, dict):
+                user_settings = {}
+
+            # Set security defaults based on user type
+            if default_admin_user:
+                security_defaults = {
                     "login_count": 0,
                     "account_locked_until": None,
                     "temporary_password": True,
                     "force_password_reset": True,  # Force reset on first login
+                    "password_changed_at": get_utc_now().isoformat(),
                 }
-            )
+            else:
+                security_defaults = {
+                    "login_count": 0,
+                    "account_locked_until": None,
+                    "temporary_password": False,
+                    "force_password_reset": False,
+                    "password_changed_at": get_utc_now().isoformat(),
+                }
 
+            # Merge settings safely
+            for key, value in security_defaults.items():
+                if key not in user_settings:
+                    user_settings[key] = value
+
+            user_data_dict["settings"] = user_settings
+
+            # Ensure other required fields have proper defaults
+            user_data_dict.setdefault("permissions", {})
+            user_data_dict.setdefault("work_schedule", {})
+            user_data_dict.setdefault("is_active", True)
+            user_data_dict.setdefault("is_verified", False)
+            user_data_dict.setdefault("is_available", True)
+
+            # CRITICAL FIX: Convert all UUID fields to proper UUID objects
+            # Ensure all UUID fields are properly converted
+            uuid_fields = ["tenant_id"]  # Add other UUID fields if needed
+            for field in uuid_fields:
+                if field in user_data_dict and user_data_dict[field]:
+                    if isinstance(user_data_dict[field], str):
+                        try:
+                            user_data_dict[field] = UUID(user_data_dict[field])
+                        except ValueError as e:
+                            logger.error(
+                                f"Invalid UUID format for {field}: {user_data_dict[field]}, error: {e}"
+                            )
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Invalid {field} format",
+                            )
+
+            # Log the data we're about to create (excluding password)
+            debug_data = user_data_dict.copy()
+            if "hashed_password" in debug_data:
+                debug_data["hashed_password"] = "***"
+            logger.debug(f"Creating user with data: {debug_data}")
+
+            # Create user with all prepared data
             user = User(**user_data_dict)
             db.add(user)
             await db.commit()
             await db.refresh(user)
 
             logger.info(f"Created new user: {user.email} in tenant: {user.tenant_id}")
-            # TODO: Log user creation for audit purposes
 
             # Send welcome email with setup instructions
             background_tasks.add_task(
@@ -2576,16 +2658,39 @@ class AuthService:
             )
 
             return user
+
         except HTTPException:
             await db.rollback()
             raise
         except Exception as e:
             await db.rollback()
-            logger.error(f"Failed to create user: {e}")
+            logger.error(f"Failed to create user: {e}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create user account",
             )
+
+    def safe_uuid_conversion(self, uuid_value) -> UUID:
+        """Safely convert various UUID formats to UUID object"""
+        if uuid_value is None:
+            raise ValueError("UUID value cannot be None")
+
+        if isinstance(uuid_value, UUID):
+            return uuid_value
+
+        if isinstance(uuid_value, str):
+            try:
+                return UUID(uuid_value)
+            except ValueError as e:
+                raise ValueError(f"Invalid UUID string format: {uuid_value}") from e
+
+        # Handle asyncpg UUID objects or other types
+        try:
+            return UUID(str(uuid_value))
+        except (ValueError, AttributeError) as e:
+            raise ValueError(
+                f"Cannot convert {type(uuid_value)} to UUID: {uuid_value}"
+            ) from e
 
     async def _handle_login_exception(
         self,
