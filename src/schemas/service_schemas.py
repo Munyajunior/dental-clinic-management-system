@@ -25,7 +25,9 @@ class ServiceCreate(ServiceBase):
     is_taxable: bool = True
     tax_rate: Decimal = Decimal("0.0")
     requirements: Optional[Dict[str, Any]] = None
+    status: ServiceStatus
     materials: Optional[Dict[str, Any]] = None
+    tenant_id: Optional[UUID] = None
 
     @field_validator("base_price")
     @classmethod
