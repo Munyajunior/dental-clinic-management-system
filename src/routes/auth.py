@@ -139,7 +139,7 @@ async def register(
         tenant_id=current_user.tenant_id,
         create_default_user=False,
     )
-    return UserPublic.from_orm(user)
+    return UserPublic.from_orm_safe(user)
 
 
 @router.post(
@@ -224,7 +224,7 @@ async def get_current_user(
 ) -> Any:
     """Get current user endpoint - requires tenant context"""
     try:
-        return UserPublic.from_orm(current_user)
+        return UserPublic.from_orm_safe(current_user)
     except Exception as e:
         logger.error(f"Get current user error: {e}")
         raise HTTPException(
