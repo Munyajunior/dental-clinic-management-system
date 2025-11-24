@@ -76,7 +76,7 @@ class UserService(BaseService):
         # Special handling for dentist role
         if user.role in [
             StaffRole.DENTIST,
-            StaffRole.DENTAL_THERAPIST,
+            StaffRole.THERAPIST,
             StaffRole.HYGIENIST,
         ]:
             # Ensure dentist-specific fields are set
