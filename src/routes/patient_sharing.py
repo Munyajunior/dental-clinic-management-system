@@ -12,8 +12,10 @@ from schemas.patient_sharing_schemas import (
     PatientSharingPublic,
 )
 from models.patient import Patient
+from models.user import User
 from services.patient_service import patient_service
 from services.auth_service import auth_service
+from services.background_service import background_service
 from utils.rate_limiter import limiter
 from utils.logger import setup_logger
 
@@ -37,7 +39,7 @@ async def share_patient(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Share patient endpoint"""
+    """Share patient endpoint with count updates"""
     try:
         result = await patient_service.share_patient(
             db,
@@ -48,6 +50,13 @@ async def share_patient(
             expires_at,
             notes,
         )
+
+        # Schedule background count update for the shared dentist
+        # (even though it's sharing not assignment, we update for workload display)
+        await background_service.schedule_patient_count_update(
+            db, shared_with_dentist_id, current_user.tenant_id
+        )
+
         return result
 
     except HTTPException:
@@ -72,11 +81,32 @@ async def revoke_patient_sharing(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Revoke patient sharing endpoint"""
+    """Revoke patient sharing endpoint with count updates"""
     try:
+        # Get sharing record first to know which dentist to update
+        from models.patient_sharing import PatientSharing
+
+        sharing_result = await db.execute(
+            select(PatientSharing).where(PatientSharing.id == sharing_id)
+        )
+        sharing = sharing_result.scalar_one_or_none()
+
+        if not sharing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Sharing record not found"
+            )
+
+        shared_with_dentist_id = sharing.shared_with_dentist_id
+
         result = await patient_service.revoke_patient_sharing(
             db, sharing_id, current_user.id
         )
+
+        # Schedule background count update for the dentist who lost access
+        await background_service.schedule_patient_count_update(
+            db, shared_with_dentist_id, current_user.tenant_id
+        )
+
         return result
 
     except HTTPException:
@@ -145,11 +175,22 @@ async def get_patients_shared_by_me(
 
         shared_patients = []
         for sharing, patient in result.all():
+            # Get shared with dentist name
+            shared_with_result = await db.execute(
+                select(User).where(User.id == sharing.shared_with_dentist_id)
+            )
+            shared_with_dentist = shared_with_result.scalar_one_or_none()
+
             shared_patients.append(
                 {
                     "sharing_id": sharing.id,
                     "patient": patient,
                     "shared_with_dentist_id": sharing.shared_with_dentist_id,
+                    "shared_with_dentist_name": (
+                        f"{shared_with_dentist.first_name} {shared_with_dentist.last_name}"
+                        if shared_with_dentist
+                        else "Unknown"
+                    ),
                     "permission_level": sharing.permission_level,
                     "shared_at": sharing.created_at,
                     "expires_at": sharing.expires_at,
@@ -180,11 +221,21 @@ async def transfer_patient(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Transfer patient endpoint"""
+    """Transfer patient endpoint with count updates"""
     try:
         result = await patient_service.transfer_patient(
             db, patient_id, new_dentist_id, transfer_reason, current_user.id
         )
+
+        # Schedule background count updates for both previous and new dentist
+        if result.get("previous_dentist_id"):
+            await background_service.schedule_patient_count_update(
+                db, result["previous_dentist_id"], current_user.tenant_id
+            )
+        await background_service.schedule_patient_count_update(
+            db, result["new_dentist_id"], current_user.tenant_id
+        )
+
         return result
 
     except HTTPException:
