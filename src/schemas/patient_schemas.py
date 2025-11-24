@@ -25,7 +25,7 @@ class PatientCreate(PatientBase):
     """Schema for creating a patient"""
 
     tenant_id: Optional[UUID] = None
-    password: str = None
+    password: Optional[str] = None
     medical_history: Optional[Dict[str, Any]] = None
     dental_history: Optional[Dict[str, Any]] = None
     insurance_info: Optional[Dict[str, Any]] = None
