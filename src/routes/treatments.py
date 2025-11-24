@@ -2,7 +2,7 @@
 from fastapi import (
     APIRouter,
     Depends,
-    status,
+    status as http_status,
     HTTPException,
     Query,
     BackgroundTasks,
@@ -82,7 +82,7 @@ async def list_treatments(
     except Exception as e:
         logger.error(f"Error listing treatments: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve treatments",
         )
 
@@ -90,7 +90,7 @@ async def list_treatments(
 @router.post(
     "/",
     response_model=TreatmentPublic,
-    status_code=status.HTTP_201_CREATED,
+    status_code=http_status.HTTP_201_CREATED,
     summary="Create treatment",
     description="Create a new treatment plan with items",
 )
@@ -111,7 +111,7 @@ async def create_treatment(
     except Exception as e:
         logger.error(f"Error creating treatment: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create treatment",
         )
 
@@ -131,7 +131,7 @@ async def get_treatment(
     treatment = await treatment_service.get(db, treatment_id)
     if not treatment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
         )
 
     try:
@@ -150,7 +150,7 @@ async def get_treatment(
     except Exception as e:
         logger.error(f"Error formatting treatment details: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve treatment details",
         )
 
@@ -173,14 +173,14 @@ async def update_treatment(
     treatment = await treatment_service.update(db, treatment_id, treatment_data)
     if not treatment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
         )
     return TreatmentPublic.from_orm(treatment)
 
 
 @router.delete(
     "/{treatment_id}",
-    status_code=status.HTTP_200_OK,
+    status_code=http_status.HTTP_200_OK,
     summary="Delete treatment",
     description="Soft delete a treatment plan",
 )
@@ -194,7 +194,7 @@ async def delete_treatment(
         success = await treatment_service.delete(db, treatment_id)
         if not success:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+                status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
             )
 
         return {"message": "Treatment deleted successfully"}
@@ -204,7 +204,7 @@ async def delete_treatment(
     except Exception as e:
         logger.error(f"Error deleting treatment: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete treatment",
         )
 
@@ -230,7 +230,7 @@ async def add_progress_note(
         )
         if not treatment:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+                status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
             )
         return TreatmentPublic.from_orm(treatment)
 
@@ -239,7 +239,7 @@ async def add_progress_note(
     except Exception as e:
         logger.error(f"Error adding progress note: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add progress note",
         )
 
@@ -260,7 +260,7 @@ async def get_progress_notes(
         treatment = await treatment_service.get(db, treatment_id)
         if not treatment:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+                status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
             )
 
         return treatment.progress_notes or []
@@ -270,7 +270,7 @@ async def get_progress_notes(
     except Exception as e:
         logger.error(f"Error getting progress notes: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve progress notes",
         )
 
@@ -293,7 +293,7 @@ async def add_treatment_item(
     treatment = await treatment_service.add_treatment_item(db, treatment_id, item_data)
     if not treatment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
         )
     return TreatmentPublic.from_orm(treatment)
 
@@ -317,7 +317,7 @@ async def get_treatment_items(
     except Exception as e:
         logger.error(f"Error getting treatment items: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve treatment items",
         )
 
@@ -340,7 +340,7 @@ async def update_treatment_status(
     treatment = await treatment_service.update_status(db, treatment_id, status)
     if not treatment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
         )
     return TreatmentPublic.from_orm(treatment)
 
@@ -365,7 +365,7 @@ async def calculate_treatment_cost(
     except Exception as e:
         logger.error(f"Error calculating treatment cost: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to calculate treatment cost",
         )
 
@@ -393,7 +393,7 @@ async def search_treatments(
     except Exception as e:
         logger.error(f"Error searching treatments: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to search treatments",
         )
 
@@ -419,7 +419,7 @@ async def duplicate_treatment(
         )
         if not treatment:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+                status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
             )
         return TreatmentPublic.from_orm(treatment)
 
@@ -428,7 +428,7 @@ async def duplicate_treatment(
     except Exception as e:
         logger.error(f"Error duplicating treatment: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to duplicate treatment",
         )
 
@@ -453,7 +453,7 @@ async def get_treatment_statistics(
     except Exception as e:
         logger.error(f"Error getting treatment statistics: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve treatment statistics",
         )
 
@@ -480,7 +480,7 @@ async def bulk_update_treatments(
     except Exception as e:
         logger.error(f"Error in bulk update: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to perform bulk update",
         )
 
@@ -508,7 +508,7 @@ async def get_treatment_analytics(
     except Exception as e:
         logger.error(f"Error getting treatment analytics: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve treatment analytics",
         )
 
@@ -534,7 +534,7 @@ async def get_dentist_treatment_statistics(
     except Exception as e:
         logger.error(f"Error getting dentist statistics: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve dentist statistics",
         )
 
@@ -561,7 +561,7 @@ async def list_treatment_templates(
     except Exception as e:
         logger.error(f"Error listing treatment templates: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve treatment templates",
         )
 
@@ -569,7 +569,7 @@ async def list_treatment_templates(
 @router.post(
     "/templates/",
     response_model=TreatmentTemplate,
-    status_code=status.HTTP_201_CREATED,
+    status_code=http_status.HTTP_201_CREATED,
     summary="Create treatment template",
     description="Create a new treatment template",
 )
@@ -586,7 +586,7 @@ async def create_treatment_template(
     except Exception as e:
         logger.error(f"Error creating treatment template: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create treatment template",
         )
 
@@ -617,7 +617,7 @@ async def create_treatment_from_template(
     except Exception as e:
         logger.error(f"Error creating treatment from template: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create treatment from template",
         )
 
@@ -660,7 +660,7 @@ async def export_treatments(
     except Exception as e:
         logger.error(f"Error exporting treatments: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to export treatments",
         )
 
@@ -685,7 +685,7 @@ async def get_treatment_dashboard_overview(
     except Exception as e:
         logger.error(f"Error getting dashboard overview: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve dashboard overview",
         )
 
@@ -708,6 +708,6 @@ async def get_upcoming_treatments(
     except Exception as e:
         logger.error(f"Error getting upcoming treatments: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve upcoming treatments",
         )
