@@ -1,5 +1,6 @@
 # src/routes/patient_assignment.py
 from fastapi import APIRouter, Depends, status, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from uuid import UUID
@@ -11,8 +12,10 @@ from schemas.patient_schemas import (
     DentistWorkload,
     PatientPublic,
 )
+from models.patient import Patient
 from services.patient_service import patient_service
 from services.auth_service import auth_service
+from services.background_service import background_service
 from utils.rate_limiter import limiter
 from utils.logger import setup_logger
 
@@ -32,7 +35,7 @@ async def assign_dentist_to_patient(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Assign dentist to patient endpoint"""
+    """Assign dentist to patient endpoint with count updates"""
     try:
         result = await patient_service.assign_dentist_to_patient(
             db,
@@ -41,6 +44,15 @@ async def assign_dentist_to_patient(
             assignment_data.assignment_reason,
             current_user.id,
             assignment_data.notes,
+        )
+
+        # Schedule background count updates for both previous and new dentist
+        if result.get("previous_dentist_id"):
+            await background_service.schedule_patient_count_update(
+                db, result["previous_dentist_id"], current_user.tenant_id
+            )
+        await background_service.schedule_patient_count_update(
+            db, result["dentist_id"], current_user.tenant_id
         )
 
         return PatientAssignmentResponse(
@@ -74,7 +86,7 @@ async def reassign_patient_to_dentist(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Reassign patient to different dentist endpoint"""
+    """Reassign patient to different dentist endpoint with count updates"""
     try:
         result = await patient_service.reassign_patient_to_dentist(
             db,
@@ -83,6 +95,15 @@ async def reassign_patient_to_dentist(
             reassignment_data.assignment_reason,
             current_user.id,
             reassignment_data.notes,
+        )
+
+        # Schedule background count updates
+        if result.get("previous_dentist_id"):
+            await background_service.schedule_patient_count_update(
+                db, result["previous_dentist_id"], current_user.tenant_id
+            )
+        await background_service.schedule_patient_count_update(
+            db, result["dentist_id"], current_user.tenant_id
         )
 
         return PatientAssignmentResponse(
@@ -115,9 +136,29 @@ async def remove_dentist_assignment(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Remove dentist assignment endpoint"""
+    """Remove dentist assignment endpoint with count updates"""
     try:
+        # Get patient first to know the current assigned dentist
+        patient_result = await db.execute(
+            select(Patient).where(Patient.id == patient_id)
+        )
+        patient = patient_result.scalar_one_or_none()
+
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        previous_dentist_id = patient.assigned_dentist_id
+
+        # Remove assignment
         await patient_service.remove_dentist_assignment(db, patient_id, current_user.id)
+
+        # Schedule background count update for previous dentist
+        if previous_dentist_id:
+            await background_service.schedule_patient_count_update(
+                db, previous_dentist_id, current_user.tenant_id
+            )
 
         return {"success": True, "message": "Dentist assignment removed successfully"}
 
@@ -167,9 +208,11 @@ async def get_all_dentists_workloads(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Get all dentists workloads endpoint"""
+    """Get all dentists workloads endpoint with real-time data"""
     try:
-        workloads = await patient_service.get_all_dentists_workloads(db)
+        workloads = await patient_service.get_all_dentists_workloads(
+            db, current_user.tenant_id
+        )
         return workloads
 
     except Exception as e:
@@ -221,10 +264,32 @@ async def auto_assign_dentist(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Auto-assign dentist endpoint"""
+    """Auto-assign dentist endpoint with count updates"""
     try:
+        # Get patient first to know if there's a current assignment
+        patient_result = await db.execute(
+            select(Patient).where(Patient.id == patient_id)
+        )
+        patient = patient_result.scalar_one_or_none()
+
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        previous_dentist_id = patient.assigned_dentist_id
+
         result = await patient_service.auto_assign_dentist(
             db, patient_id, assignment_reason, current_user.id
+        )
+
+        # Schedule background count updates for both previous and new dentist
+        if previous_dentist_id:
+            await background_service.schedule_patient_count_update(
+                db, previous_dentist_id, current_user.tenant_id
+            )
+        await background_service.schedule_patient_count_update(
+            db, result["dentist_id"], current_user.tenant_id
         )
 
         return PatientAssignmentResponse(
@@ -243,4 +308,45 @@ async def auto_assign_dentist(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to auto-assign dentist",
+        )
+
+
+@router.post(
+    "/transfer",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Transfer patient to another dental professional",
+    description="Completely transfer patient to another dental professional",
+)
+async def transfer_patient(
+    patient_id: UUID,
+    new_dentist_id: UUID,
+    transfer_reason: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Transfer patient endpoint with count updates"""
+    try:
+        result = await patient_service.transfer_patient(
+            db, patient_id, new_dentist_id, transfer_reason, current_user.id
+        )
+
+        # Schedule background count updates for both previous and new dentist
+        if result.get("previous_dentist_id"):
+            await background_service.schedule_patient_count_update(
+                db, result["previous_dentist_id"], current_user.tenant_id
+            )
+        await background_service.schedule_patient_count_update(
+            db, result["new_dentist_id"], current_user.tenant_id
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to transfer patient: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to transfer patient",
         )
