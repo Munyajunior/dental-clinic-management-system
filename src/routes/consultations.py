@@ -67,6 +67,7 @@ async def create_consultation(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """Create consultation endpoint with authorization check"""
+    consultation_data.tenant_id = current_user.tenant_id
     consultation = await consultation_service.create_consultation(
         db, consultation_data, current_user
     )
