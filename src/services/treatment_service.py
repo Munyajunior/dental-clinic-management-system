@@ -27,6 +27,79 @@ logger = setup_logger("TREATMENT_SERVICE")
 class TreatmentService(BaseService):
     def __init__(self):
         super().__init__(Treatment)
+        self.search_fields = ["name", "description"]  # Define searchable fields
+
+    async def get_multi(
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        search_query: Optional[str] = None,
+        search_fields: Optional[List[str]] = None,
+    ) -> List[Treatment]:
+        """Get treatments with advanced search including patient and dentist names"""
+        try:
+            query = select(Treatment)
+
+            # Apply basic filters
+            if filters:
+                conditions = []
+                for field, value in filters.items():
+                    if hasattr(Treatment, field):
+                        conditions.append(getattr(Treatment, field) == value)
+                if conditions:
+                    query = query.where(and_(*conditions))
+
+            # Apply advanced search
+            if search_query:
+                search_conditions = []
+
+                # Search in treatment fields
+                if search_fields or self.search_fields:
+                    fields_to_search = search_fields or self.search_fields
+                    for field in fields_to_search:
+                        if hasattr(Treatment, field):
+                            search_conditions.append(
+                                getattr(Treatment, field).ilike(f"%{search_query}%")
+                            )
+
+                # Search in patient name (if relationship exists)
+                if hasattr(Treatment, "patient"):
+                    search_conditions.extend(
+                        [
+                            Treatment.patient.has(
+                                Patient.first_name.ilike(f"%{search_query}%")
+                            ),
+                            Treatment.patient.has(
+                                Patient.last_name.ilike(f"%{search_query}%")
+                            ),
+                        ]
+                    )
+
+                # Search in dentist name (if relationship exists)
+                if hasattr(Treatment, "dentist"):
+                    search_conditions.extend(
+                        [
+                            Treatment.dentist.has(
+                                User.first_name.ilike(f"%{search_query}%")
+                            ),
+                            Treatment.dentist.has(
+                                User.last_name.ilike(f"%{search_query}%")
+                            ),
+                        ]
+                    )
+
+                if search_conditions:
+                    query = query.where(or_(*search_conditions))
+
+            query = query.offset(skip).limit(limit)
+            result = await db.execute(query)
+            return result.scalars().all()
+
+        except Exception as e:
+            logger.error(f"Error in treatment service get_multi: {e}")
+            return []
 
     async def create_treatment(
         self, db: AsyncSession, treatment_data: TreatmentCreate
