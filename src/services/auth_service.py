@@ -2572,7 +2572,7 @@ class AuthService:
             # Ensure proper defaults for dentist-specific fields
             if user_data_dict.get("role") in [
                 StaffRole.DENTIST,
-                StaffRole.DENTAL_THERAPIST,
+                StaffRole.THERAPIST,
                 StaffRole.HYGIENIST,
             ]:
                 user_data_dict.setdefault("max_patients", 50)
