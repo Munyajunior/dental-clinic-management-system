@@ -6,12 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from fastapi import HTTPException, status
 from models.consultation import Consultation
-from models.patient import Patient
+from models.patient import Patient, PatientStatus
+from models.appointment import Appointment
 from models.patient_sharing import PatientSharing
 from models.user import User, StaffRole
 from schemas.consultation_schemas import ConsultationCreate, ConsultationUpdate
 from utils.logger import setup_logger
 from .base_service import BaseService
+from services.patient_service import patient_service
 
 logger = setup_logger("CONSULTATION_SERVICE")
 
@@ -30,7 +32,8 @@ class ConsultationService(BaseService):
         # Verify patient exists and is active
         patient_result = await db.execute(
             select(Patient).where(
-                Patient.id == consultation_data.patient_id, Patient.is_active == True
+                Patient.id == consultation_data.patient_id,
+                Patient.status == PatientStatus.ACTIVE,
             )
         )
         patient = patient_result.scalar_one_or_none()
@@ -57,11 +60,7 @@ class ConsultationService(BaseService):
                     User.id == consultation_data.dentist_id,
                     User.is_active == True,
                     User.role.in_(
-                        [
-                            StaffRole.DENTIST,
-                            StaffRole.DENTAL_THERAPIST,
-                            StaffRole.HYGIENIST,
-                        ]
+                        [StaffRole.DENTIST, StaffRole.THERAPIST, StaffRole.HYGIENIST]
                     ),
                 )
             )
@@ -74,8 +73,6 @@ class ConsultationService(BaseService):
 
         # If appointment_id is provided, verify it exists
         if consultation_data.appointment_id:
-            from models.appointment import Appointment
-
             appointment_result = await db.execute(
                 select(Appointment).where(
                     Appointment.id == consultation_data.appointment_id
@@ -93,39 +90,13 @@ class ConsultationService(BaseService):
         await db.commit()
         await db.refresh(consultation)
 
+        # Update last visit for patient
+        await patient_service.update_last_visit(db, consultation_data.patient_id)
+
         logger.info(
             f"Created new consultation: {consultation.id} for patient {patient.id} by user {current_user.id}"
         )
         return consultation
-
-    async def _can_user_consult_patient(
-        self, db: AsyncSession, user: User, patient: Patient, requested_dentist_id: UUID
-    ) -> bool:
-        """Check if user can consult with this patient"""
-        # Admin users can consult any patient
-        if user.role == StaffRole.ADMIN:
-            return True
-
-        # Check if user is the assigned dental professional
-        if patient.assigned_dentist_id == user.id:
-            return True
-
-        # Check if user is the requested dentist (for shared consultations)
-        if requested_dentist_id == user.id:
-            # Verify that the patient is shared with this user
-            # This would require a patient_sharing table in a real implementation
-            is_shared = await self._is_patient_shared_with_user(db, patient.id, user.id)
-            return is_shared
-
-        return False
-
-    async def _is_patient_shared_with_user(
-        self, db: AsyncSession, patient_id: UUID, user_id: UUID
-    ) -> bool:
-        """Check if patient is shared with this user"""
-        # In a real implementation, this would query a patient_sharing table
-        # For now, return False - you'll need to implement patient sharing logic
-        return False
 
     async def get_patient_consultations(
         self,
@@ -326,6 +297,34 @@ class ConsultationService(BaseService):
         )
 
         return result.scalar_one_or_none() is not None
+
+    async def delete_consultation(
+        self, db: AsyncSession, consultation_id: UUID, current_user: User
+    ) -> bool:
+        """Delete consultation with authorization check"""
+        consultation = await self.get(db, consultation_id)
+        if not consultation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Consultation not found"
+            )
+
+        # Verify user can modify this consultation
+        can_modify = await self._can_user_modify_consultation(
+            db, current_user, consultation
+        )
+        if not can_modify:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not authorized to delete this consultation",
+            )
+
+        await db.delete(consultation)
+        await db.commit()
+
+        logger.info(
+            f"Deleted consultation: {consultation_id} by user {current_user.id}"
+        )
+        return True
 
 
 consultation_service = ConsultationService()
