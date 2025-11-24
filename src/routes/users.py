@@ -87,7 +87,7 @@ async def create_user(
     # Validate role-specific requirements
     if user_data.role in [
         StaffRole.DENTIST,
-        StaffRole.DENTAL_THERAPIST,
+        StaffRole.THERAPIST,
         StaffRole.HYGIENIST,
     ]:
         if not user_data.specialization:
@@ -168,7 +168,7 @@ async def update_user(
     # Validate role-specific requirements for dentists
     if user_data.role in [
         StaffRole.DENTIST,
-        StaffRole.DENTAL_THERAPIST,
+        StaffRole.THERAPIST,
         StaffRole.HYGIENIST,
     ]:
         if not user_data.specialization:
