@@ -51,32 +51,21 @@ class PatientService(BaseService):
             patient_dict["hashed_password"] = hashed_password
 
             # Handle dentist assignment
+            assigned_dentist = None
             if patient_data.assigned_dentist_id:
-                await self._validate_dentist_assignment(
+                assigned_dentist = await self._validate_dentist_assignment(
                     db, patient_data.assigned_dentist_id, patient_data.tenant_id
                 )
                 patient_dict["dentist_assignment_date"] = datetime.now(timezone.utc)
 
-            # DEBUG: Check what we're creating
-            logger.debug(f"Patient dict before creation: {patient_dict}")
-
+            # Create patient
             patient = Patient(**patient_dict)
-            # DEBUG: Check the patient object before adding to session
-            logger.debug(f"Patient object created: {patient}")
-            logger.debug(f"Patient object type: {type(patient)}")
-            logger.debug(f"Patient ID: {getattr(patient, 'id', 'NO ID')}")
-            logger.debug(
-                f"Patient tenant_id: {getattr(patient, 'tenant_id', 'NO TENANT ID')}"
-            )
             db.add(patient)
-
-            # DEBUG: Check session state before flush
-            logger.debug("About to flush session...")
             await db.flush()
 
-            # DEBUG: Check patient after flush
-            logger.debug(f"Patient after flush - ID: {patient.id}")
-            logger.debug(f"Patient after flush - full object: {patient}")
+            # Update dentist patient count if assigned
+            if assigned_dentist:
+                await self._update_dentist_patient_count(db, assigned_dentist.id)
 
             await db.commit()
             await db.refresh(patient)
@@ -85,17 +74,10 @@ class PatientService(BaseService):
                 f"Created new patient: {patient.first_name} {patient.last_name}"
             )
             return patient
+
         except Exception as e:
             await db.rollback()
             logger.error(f"Failed to create patient: {e}", exc_info=True)
-
-            # Additional debugging for tuple error
-            if "'tuple' object has no attribute 'id'" in str(e):
-                logger.error("TUPLE ERROR IN PATIENT CREATION!")
-                # Check if patient is a tuple
-                if "patient" in locals() and isinstance(patient, tuple):
-                    logger.error(f"Patient became a tuple: {patient}")
-
             raise
 
     async def assign_dentist_to_patient(
@@ -107,22 +89,31 @@ class PatientService(BaseService):
         assigned_by: UUID,
         notes: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Assign a specific dentist to a patient"""
-        # Get patient
+        """Assign a specific dentist to a patient and update counts"""
+        # Get patient and current assigned dentist
         patient = await self.get(db, patient_id)
         if not patient:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
             )
 
-        # Validate dentist
-        await self._validate_dentist_assignment(db, dentist_id, patient.tenant_id)
+        previous_dentist_id = patient.assigned_dentist_id
+
+        # Validate new dentist
+        new_dentist = await self._validate_dentist_assignment(
+            db, dentist_id, patient.tenant_id
+        )
 
         # Update patient assignment
         patient.assigned_dentist_id = dentist_id
         patient.assignment_reason = assignment_reason
         patient.dentist_assignment_date = datetime.now(timezone.utc)
         patient.updated_by = assigned_by
+
+        # Update dentist patient counts
+        if previous_dentist_id:
+            await self._update_dentist_patient_count(db, previous_dentist_id)
+        await self._update_dentist_patient_count(db, dentist_id)
 
         await db.commit()
         await db.refresh(patient)
@@ -134,6 +125,7 @@ class PatientService(BaseService):
             "dentist_id": dentist_id,
             "assignment_reason": assignment_reason.value,
             "assignment_date": patient.dentist_assignment_date,
+            "previous_dentist_id": previous_dentist_id,
         }
 
     async def reassign_patient_to_dentist(
@@ -145,7 +137,7 @@ class PatientService(BaseService):
         reassigned_by: UUID,
         notes: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Reassign patient to a different dentist"""
+        """Reassign patient to a different dentist and update counts"""
         # Get patient
         patient = await self.get(db, patient_id)
         if not patient:
@@ -153,15 +145,23 @@ class PatientService(BaseService):
                 status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
             )
 
+        previous_dentist_id = patient.assigned_dentist_id
+
         # Validate new dentist
-        await self._validate_dentist_assignment(db, new_dentist_id, patient.tenant_id)
+        new_dentist = await self._validate_dentist_assignment(
+            db, new_dentist_id, patient.tenant_id
+        )
 
         # Update patient assignment
-        previous_dentist_id = patient.assigned_dentist_id
         patient.assigned_dentist_id = new_dentist_id
         patient.assignment_reason = assignment_reason
         patient.dentist_assignment_date = datetime.now(timezone.utc)
         patient.updated_by = reassigned_by
+
+        # Update dentist patient counts
+        if previous_dentist_id:
+            await self._update_dentist_patient_count(db, previous_dentist_id)
+        await self._update_dentist_patient_count(db, new_dentist_id)
 
         await db.commit()
         await db.refresh(patient)
@@ -175,12 +175,13 @@ class PatientService(BaseService):
             "dentist_id": new_dentist_id,
             "assignment_reason": assignment_reason.value,
             "assignment_date": patient.dentist_assignment_date,
+            "previous_dentist_id": previous_dentist_id,
         }
 
     async def remove_dentist_assignment(
         self, db: AsyncSession, patient_id: UUID, removed_by: UUID
     ) -> None:
-        """Remove dentist assignment from patient"""
+        """Remove dentist assignment from patient and update count"""
         # Get patient
         patient = await self.get(db, patient_id)
         if not patient:
@@ -188,11 +189,17 @@ class PatientService(BaseService):
                 status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
             )
 
+        previous_dentist_id = patient.assigned_dentist_id
+
         # Remove assignment
         patient.assigned_dentist_id = None
         patient.assignment_reason = None
         patient.dentist_assignment_date = None
         patient.updated_by = removed_by
+
+        # Update previous dentist's patient count
+        if previous_dentist_id:
+            await self._update_dentist_patient_count(db, previous_dentist_id)
 
         await db.commit()
 
@@ -303,14 +310,16 @@ class PatientService(BaseService):
 
     async def _validate_dentist_assignment(
         self, db: AsyncSession, dentist_id: UUID, tenant_id: UUID
-    ) -> None:
-        """Validate that a dentist can be assigned to a patient"""
+    ) -> User:
+        """Validate that a dentist can be assigned to a patient and return dentist object"""
         # Check if dentist exists and is active
         result = await db.execute(
             select(User).where(
                 User.id == dentist_id,
                 User.tenant_id == tenant_id,
-                User.role == StaffRole.DENTIST,
+                User.role.in_(
+                    [StaffRole.DENTIST, StaffRole.THERAPIST, StaffRole.HYGIENIST]
+                ),
                 User.is_active == True,
             )
         )
@@ -319,53 +328,132 @@ class PatientService(BaseService):
         if not dentist:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Dentist not found or not available",
+                detail="Dental professional not found or not available",
             )
 
-        # Check if dentist is available for new patients
+        # Check if dental professional is available for new patients
         if not dentist.is_available:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Dentist is not currently available for new patients",
+                detail="Dental professional is not currently available for new patients",
             )
 
-        # Check workload
-        patient_count_result = await db.execute(
-            select(func.count()).where(
-                Patient.assigned_dentist_id == dentist_id,
-                Patient.status == PatientStatus.ACTIVE,
-            )
-        )
-        current_patient_count = patient_count_result.scalar()
+        # Check workload using real-time count
+        current_patient_count = await self._get_current_patient_count(db, dentist_id)
         max_patients = dentist.max_patients or 50
 
         if current_patient_count >= max_patients:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Dentist has reached maximum patient capacity ({max_patients})",
+                detail=f"Dental professional has reached maximum patient capacity ({max_patients})",
             )
 
-    async def get_dentist_workload(
+        return dentist
+
+    async def _get_current_patient_count(
         self, db: AsyncSession, dentist_id: UUID
-    ) -> DentistWorkload:
-        """Get workload information for a specific dentist"""
-        # Get dentist
-        result = await db.execute(select(User).where(User.id == dentist_id))
-        dentist = result.scalar_one_or_none()
-
-        if not dentist or dentist.role != StaffRole.DENTIST:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Dentist not found"
-            )
-
-        # Count assigned patients
-        patient_count_result = await db.execute(
+    ) -> int:
+        """Get real-time count of active patients assigned to a dental professional"""
+        result = await db.execute(
             select(func.count()).where(
                 Patient.assigned_dentist_id == dentist_id,
                 Patient.status == PatientStatus.ACTIVE,
             )
         )
-        current_patient_count = patient_count_result.scalar()
+        return result.scalar() or 0
+
+    async def _update_dentist_patient_count(
+        self, db: AsyncSession, dentist_id: UUID
+    ) -> None:
+        """Update the dentist's current patient count in their settings"""
+        try:
+            # Get current real-time count
+            current_count = await self._get_current_patient_count(db, dentist_id)
+
+            # Update dentist's settings with current count
+            result = await db.execute(select(User).where(User.id == dentist_id))
+            dentist = result.scalar_one_or_none()
+
+            if dentist:
+                # Update settings with current patient count
+                settings = dentist.settings or {}
+                settings["current_patient_count"] = current_count
+                settings["patient_count_updated_at"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
+
+                # Update workload percentage
+                max_patients = dentist.max_patients or 50
+                workload_percentage = (
+                    (current_count / max_patients) * 100 if max_patients > 0 else 0
+                )
+                settings["workload_percentage"] = workload_percentage
+
+                # Update is_accepting_new_patients based on workload
+                if workload_percentage >= 100:
+                    dentist.is_accepting_new_patients = False
+                elif workload_percentage < 85:  # Allow buffer for new patients
+                    dentist.is_accepting_new_patients = True
+
+                dentist.settings = settings
+                await db.flush()
+
+                logger.debug(
+                    f"Updated patient count for dentist {dentist_id}: {current_count}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error updating dentist patient count for {dentist_id}: {e}")
+
+    async def update_dentist_patient_counts(
+        self, db: AsyncSession, tenant_id: UUID
+    ) -> None:
+        """Update patient counts for all dental professionals in a tenant"""
+        try:
+            # Get all dental professionals
+            result = await db.execute(
+                select(User).where(
+                    User.tenant_id == tenant_id,
+                    User.role.in_(
+                        [StaffRole.DENTIST, StaffRole.THERAPIST, StaffRole.HYGIENIST]
+                    ),
+                    User.is_active == True,
+                )
+            )
+            dental_professionals = result.scalars().all()
+
+            for professional in dental_professionals:
+                await self._update_dentist_patient_count(db, professional.id)
+
+            await db.commit()
+            logger.info(
+                f"Updated patient counts for {len(dental_professionals)} dental professionals"
+            )
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error updating all dentist patient counts: {e}")
+
+    async def get_dentist_workload(
+        self, db: AsyncSession, dentist_id: UUID
+    ) -> DentistWorkload:
+        """Get workload information for a specific dentist using real-time data"""
+        # Get dentist
+        result = await db.execute(select(User).where(User.id == dentist_id))
+        dentist = result.scalar_one_or_none()
+
+        if not dentist or dentist.role not in [
+            StaffRole.DENTIST,
+            StaffRole.THERAPIST,
+            StaffRole.HYGIENIST,
+        ]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dental professional not found",
+            )
+
+        # Get real-time patient count
+        current_patient_count = await self._get_current_patient_count(db, dentist_id)
 
         max_patients = dentist.max_patients or 50
         workload_percentage = (
@@ -388,55 +476,56 @@ class PatientService(BaseService):
         )
 
     async def get_all_dentists_workloads(
-        self, db: AsyncSession
+        self, db: AsyncSession, tenant_id: UUID
     ) -> List[DentistWorkload]:
-        """Get workload information for all dentists"""
+        """Get workload information for all dental professionals using real-time data"""
         try:
-            # Get all dentists
+            # Get all dental professionals
             result = await db.execute(
-                select(User).where(User.role == StaffRole.DENTIST)
+                select(User).where(
+                    User.tenant_id == tenant_id,
+                    User.role.in_(
+                        [StaffRole.DENTIST, StaffRole.THERAPIST, StaffRole.HYGIENIST]
+                    ),
+                )
             )
-            dentists = result.scalars().all()
+            dental_professionals = result.scalars().all()
 
             workloads = []
-            for dentist in dentists:
-                # Count assigned patients
-                patient_count_result = await db.execute(
-                    select(func.count()).where(
-                        Patient.assigned_dentist_id == dentist.id,
-                        Patient.status == PatientStatus.ACTIVE,
-                    )
+            for professional in dental_professionals:
+                # Get real-time patient count
+                current_patient_count = await self._get_current_patient_count(
+                    db, professional.id
                 )
-                current_patient_count = patient_count_result.scalar()
 
-                max_patients = dentist.max_patients or 50
+                max_patients = professional.max_patients or 50
                 workload_percentage = (
                     (current_patient_count / max_patients) * 100
                     if max_patients > 0
                     else 0
                 )
                 is_accepting_new_patients = (
-                    dentist.is_available
+                    professional.is_available
                     and current_patient_count < max_patients
-                    and dentist.is_active
+                    and professional.is_active
                 )
 
                 workloads.append(
                     DentistWorkload(
-                        dentist_id=dentist.id,
-                        dentist_name=f"{dentist.first_name} {dentist.last_name}",
+                        dentist_id=professional.id,
+                        dentist_name=f"{professional.first_name} {professional.last_name}",
                         current_patient_count=current_patient_count,
                         max_patients=max_patients,
                         workload_percentage=workload_percentage,
                         is_accepting_new_patients=is_accepting_new_patients,
-                        specialization=dentist.specialization,
+                        specialization=professional.specialization,
                     )
                 )
 
             return workloads
 
         except Exception as e:
-            logger.error(f"Error getting all dentists workloads: {e}")
+            logger.error(f"Error getting all dental professionals workloads: {e}")
             return []
 
     async def get_patients_by_dentist(
@@ -724,7 +813,7 @@ class PatientService(BaseService):
         transfer_reason: str,
         transferred_by: UUID,
     ) -> Dict[str, Any]:
-        """Transfer patient to another dental professional"""
+        """Transfer patient to another dental professional and update counts"""
         # Get patient
         patient = await self.get(db, patient_id)
         if not patient:
@@ -747,11 +836,12 @@ class PatientService(BaseService):
                 detail="Only the assigned dental professional or admin can transfer this patient",
             )
 
-        # Validate new dentist
-        await self._validate_dentist_assignment(db, new_dentist_id, patient.tenant_id)
-
-        # Store previous assignment for audit
         previous_dentist_id = patient.assigned_dentist_id
+
+        # Validate new dentist
+        new_dentist = await self._validate_dentist_assignment(
+            db, new_dentist_id, patient.tenant_id
+        )
 
         # Update patient assignment
         patient.assigned_dentist_id = new_dentist_id
@@ -760,6 +850,8 @@ class PatientService(BaseService):
         patient.updated_by = transferred_by
 
         # Deactivate any active sharing records for this patient
+        from models.patient_sharing import PatientSharing
+
         await db.execute(
             update(PatientSharing)
             .where(
@@ -768,6 +860,11 @@ class PatientService(BaseService):
             )
             .values(is_active=False)
         )
+
+        # Update dentist patient counts
+        if previous_dentist_id:
+            await self._update_dentist_patient_count(db, previous_dentist_id)
+        await self._update_dentist_patient_count(db, new_dentist_id)
 
         await db.commit()
         await db.refresh(patient)
@@ -784,6 +881,31 @@ class PatientService(BaseService):
             "transfer_reason": transfer_reason,
             "transferred_at": patient.dentist_assignment_date,
         }
+
+    async def delete_patient(
+        self, db: AsyncSession, patient_id: UUID, deleted_by: UUID
+    ) -> bool:
+        """Soft delete patient and update dentist count"""
+        patient = await self.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        previous_dentist_id = patient.assigned_dentist_id
+
+        # Soft delete by updating status
+        patient.status = PatientStatus.INACTIVE
+        patient.updated_by = deleted_by
+
+        # Update dentist patient count if patient was assigned
+        if previous_dentist_id:
+            await self._update_dentist_patient_count(db, previous_dentist_id)
+
+        await db.commit()
+
+        logger.info(f"Deleted patient {patient_id}")
+        return True
 
 
 patient_service = PatientService()
