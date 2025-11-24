@@ -29,6 +29,7 @@ class ConsultationCreate(ConsultationBase):
     recommendations: Optional[str] = None
     consultation_fee: Optional[Decimal] = None
     next_appointment_date: Optional[datetime] = None
+    tenant_id: Optional[UUID] = None
 
 
 class ConsultationUpdate(BaseSchema):
