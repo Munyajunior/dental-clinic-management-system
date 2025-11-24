@@ -13,6 +13,7 @@ from schemas.patient_schemas import (
 )
 from services.patient_service import patient_service
 from services.auth_service import auth_service
+from services.background_service import background_service
 from utils.rate_limiter import limiter
 from utils.logger import setup_logger
 
@@ -77,6 +78,9 @@ async def create_patient(
         if not hasattr(patient_data, "tenant_id") or not patient_data.tenant_id:
             patient_data.tenant_id = current_user.tenant_id
 
+        if not hasattr(patient_data, "password") or not patient_data.password:
+            patient_data.password = patient_data.email.strip()
+
         # DEBUG: Check database session state
         logger.debug("About to call patient_service.create...")
         patient = await patient_service.create_patient(
@@ -101,6 +105,12 @@ async def create_patient(
             )
 
         logger.info(f"Successfully created patient: {patient.id}")
+        # Schedule background count updates if patient was assigned
+        if patient.assigned_dentist_id:
+            await background_service.schedule_patient_count_update(
+                db, patient.assigned_dentist_id, current_user.tenant_id
+            )
+
         return PatientPublic.from_orm(patient)
 
     except HTTPException:
@@ -150,13 +160,47 @@ async def update_patient(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
-    """Update patient endpoint"""
-    patient = await patient_service.update(db, patient_id, patient_data)
-    if not patient:
+    """Update patient endpoint with count updates"""
+    try:
+        # Get current patient data to check for assignment changes
+        current_patient = await patient_service.get(db, patient_id)
+        if not current_patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        previous_dentist_id = current_patient.assigned_dentist_id
+
+        patient = await patient_service.update(db, patient_id, patient_data)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Check if assignment changed and update counts
+        new_dentist_id = patient.assigned_dentist_id
+
+        if previous_dentist_id != new_dentist_id:
+            # Update counts for both previous and new dentist
+            if previous_dentist_id:
+                await background_service.schedule_patient_count_update(
+                    db, previous_dentist_id, current_user.tenant_id
+                )
+            if new_dentist_id:
+                await background_service.schedule_patient_count_update(
+                    db, new_dentist_id, current_user.tenant_id
+                )
+
+        return PatientPublic.from_orm(patient)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating patient: {e}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update patient",
         )
-    return PatientPublic.from_orm(patient)
 
 
 @router.delete(
@@ -170,11 +214,59 @@ async def deactivate_patient(
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> None:
-    """Deactivate patient endpoint"""
-    # Soft delete by updating status
-    update_data = PatientUpdate(status="inactive")
-    patient = await patient_service.update(db, patient_id, update_data)
-    if not patient:
+    """Deactivate patient endpoint with count updates"""
+    try:
+        # Get patient first to know the assigned dentist
+        patient = await patient_service.get(db, patient_id)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        previous_dentist_id = patient.assigned_dentist_id
+
+        # Soft delete by updating status
+        update_data = PatientUpdate(status="inactive")
+        patient = await patient_service.update(db, patient_id, update_data)
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Update dentist patient count if patient was assigned
+        if previous_dentist_id:
+            await background_service.schedule_patient_count_update(
+                db, previous_dentist_id, current_user.tenant_id
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deactivating patient: {e}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to deactivate patient",
+        )
+
+
+@router.post(
+    "/refresh-patient-counts",
+    summary="Refresh patient counts",
+    description="Refresh patient counts for all dental professionals",
+)
+async def refresh_patient_counts(
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Refresh all patient counts endpoint"""
+    try:
+        await background_service.update_all_dentist_counts(db, current_user.tenant_id)
+
+        return {"success": True, "message": "Patient counts refreshed successfully"}
+
+    except Exception as e:
+        logger.error(f"Error refreshing patient counts: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh patient counts",
         )
