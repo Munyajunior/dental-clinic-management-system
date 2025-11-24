@@ -29,74 +29,88 @@ class ConsultationService(BaseService):
         current_user: User,
     ) -> Consultation:
         """Create new consultation with validation for patient assignment"""
-        # Verify patient exists and is active
-        patient_result = await db.execute(
-            select(Patient).where(
-                Patient.id == consultation_data.patient_id,
-                Patient.status == PatientStatus.ACTIVE,
-            )
-        )
-        patient = patient_result.scalar_one_or_none()
-        if not patient:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Patient not found or inactive",
-            )
-
-        # Check if current user is assigned to this patient or has permission to consult
-        can_consult = await self._can_user_consult_patient(
-            db, current_user, patient, consultation_data.dentist_id
-        )
-        if not can_consult:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not authorized to consult this patient",
-            )
-
-        # Verify dentist exists and is active (if different from current user)
-        if consultation_data.dentist_id != current_user.id:
-            dentist_result = await db.execute(
-                select(User).where(
-                    User.id == consultation_data.dentist_id,
-                    User.is_active == True,
-                    User.role.in_(
-                        [StaffRole.DENTIST, StaffRole.THERAPIST, StaffRole.HYGIENIST]
-                    ),
+        try:
+            # Verify patient exists and is active
+            patient_result = await db.execute(
+                select(Patient).where(
+                    Patient.id == consultation_data.patient_id,
+                    Patient.status == PatientStatus.ACTIVE,
                 )
             )
-            dentist = dentist_result.scalar_one_or_none()
-            if not dentist:
+            patient = patient_result.scalar_one_or_none()
+            if not patient:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Dental professional not found or inactive",
+                    detail="Patient not found or inactive",
                 )
 
-        # If appointment_id is provided, verify it exists
-        if consultation_data.appointment_id:
-            appointment_result = await db.execute(
-                select(Appointment).where(
-                    Appointment.id == consultation_data.appointment_id
-                )
+            # Check if current user is assigned to this patient or has permission to consult
+            can_consult = await self._can_user_consult_patient(
+                db, current_user, patient, consultation_data.dentist_id
             )
-            appointment = appointment_result.scalar_one_or_none()
-            if not appointment:
+            if not can_consult:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Appointment not found",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are not authorized to consult this patient",
                 )
 
-        consultation = Consultation(**consultation_data.dict())
-        db.add(consultation)
-        await db.commit()
-        await db.refresh(consultation)
+            # Verify dentist exists and is active (if different from current user)
+            if consultation_data.dentist_id != current_user.id:
+                dentist_result = await db.execute(
+                    select(User).where(
+                        User.id == consultation_data.dentist_id,
+                        User.is_active == True,
+                        User.role.in_(
+                            [
+                                StaffRole.DENTIST,
+                                StaffRole.THERAPIST,
+                                StaffRole.HYGIENIST,
+                            ]
+                        ),
+                    )
+                )
+                dentist = dentist_result.scalar_one_or_none()
+                if not dentist:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Dental professional not found or inactive",
+                    )
 
-        # Update last visit for patient
-        await patient_service.update_last_visit(db, consultation_data.patient_id)
+            # If appointment_id is provided, verify it exists
+            if consultation_data.appointment_id:
+                appointment_result = await db.execute(
+                    select(Appointment).where(
+                        Appointment.id == consultation_data.appointment_id
+                    )
+                )
+                appointment = appointment_result.scalar_one_or_none()
+                if not appointment:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Appointment not found",
+                    )
 
-        logger.info(
-            f"Created new consultation: {consultation.id} for patient {patient.id} by user {current_user.id}"
-        )
-        return consultation
+            consultation = Consultation(**consultation_data.model_dump())
+            db.add(consultation)
+            await db.commit()
+            await db.refresh(consultation)
+
+            # Update last visit for patient
+            await patient_service.update_last_visit(db, consultation_data.patient_id)
+
+            logger.info(
+                f"Created new consultation: {consultation.id} for patient {patient.id} by user {current_user.id}"
+            )
+            return consultation
+        except HTTPException:
+            raise
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error creating consultation: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create consultation",
+            )
 
     async def get_patient_consultations(
         self,
