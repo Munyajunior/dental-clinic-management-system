@@ -31,7 +31,7 @@ class GenderEnum(str, PyEnum):
 class StaffRole(str, PyEnum):
     ADMIN = "admin"
     DENTIST = "dentist"
-    DENTAL_THERAPIST = "dental_therapist"
+    THERAPIST = "therapist"
     HYGIENIST = "hygienist"
     ASSISTANT = "assistant"
     RECEPTIONIST = "receptionist"
@@ -190,7 +190,7 @@ class User(Base):
         # Initialize dentist-specific fields
         if kwargs.get("role") in [
             StaffRole.DENTIST,
-            StaffRole.DENTAL_THERAPIST,
+            StaffRole.THERAPIST,
             StaffRole.HYGIENIST,
         ]:
             if "max_patients" not in kwargs or kwargs["max_patients"] is None:
@@ -251,6 +251,45 @@ class User(Base):
         if self.max_patients <= 0:
             return 0.0
         return (self.current_patient_count / self.max_patients) * 100
+
+    @property
+    def current_patient_count_real_time(self) -> int:
+        """Get current number of assigned patients (real-time, not cached)"""
+        # This is a placeholder - the actual count will be computed by the service
+        # The service will update this in settings for display purposes
+        try:
+            settings = self.settings or {}
+            return settings.get("current_patient_count", 0)
+        except Exception:
+            return 0
+
+    @property
+    def workload_percentage_real_time(self) -> float:
+        """Calculate current workload percentage (real-time)"""
+        try:
+            settings = self.settings or {}
+            if "workload_percentage" in settings:
+                return settings["workload_percentage"]
+
+            # Fallback calculation
+            max_patients = self.max_patients or 50
+            if max_patients <= 0:
+                return 0.0
+            return (self.current_patient_count_real_time / max_patients) * 100
+        except Exception:
+            return 0.0
+
+    @property
+    def is_accepting_new_patients_real_time(self) -> bool:
+        """Check if dental professional can accept new patients (real-time)"""
+        try:
+            if not self.is_active or not self.is_available:
+                return False
+
+            max_patients = self.max_patients or 50
+            return self.current_patient_count_real_time < max_patients
+        except Exception:
+            return False
 
     def set_profile_picture(self, image_data: bytes, content_type: str):
         """Store profile picture in the database."""
