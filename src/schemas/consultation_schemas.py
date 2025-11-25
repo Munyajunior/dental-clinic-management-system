@@ -72,6 +72,8 @@ class ConsultationPublic(BaseSchema):
     id: UUID
     patient_id: UUID
     dentist_id: UUID
+    dentist_name: Optional[str] = None
+    patient_name: Optional[str] = None
     appointment_id: Optional[UUID] = None
     chief_complaint: Optional[str] = None
     consultation_fee: Optional[Decimal] = None
