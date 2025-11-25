@@ -1,9 +1,10 @@
 # src/services/consultation_service.py
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func
+from sqlalchemy.orm import joinedload, selectinload
 from fastapi import HTTPException, status
 from models.consultation import Consultation
 from models.patient import Patient, PatientStatus
@@ -21,6 +22,53 @@ logger = setup_logger("CONSULTATION_SERVICE")
 class ConsultationService(BaseService):
     def __init__(self):
         super().__init__(Consultation)
+
+    async def get(self, db: AsyncSession, id: UUID) -> Optional[Consultation]:
+        """Get a single consultation by ID with relationships"""
+        try:
+            result = await db.execute(
+                select(Consultation)
+                .options(
+                    selectinload(Consultation.dentist),
+                    selectinload(Consultation.patient),
+                )
+                .where(Consultation.id == id)
+            )
+            item = result.scalar_one_or_none()
+            return item
+        except Exception as e:
+            logger.error(f"Error getting consultation: {e}")
+            return None
+
+    async def get_multi(
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Consultation]:
+        """Get multiple consultations with pagination, filtering, and relationships"""
+        try:
+            query = select(Consultation).options(
+                selectinload(Consultation.dentist), selectinload(Consultation.patient)
+            )
+
+            if filters:
+                conditions = []
+                for field, value in filters.items():
+                    if hasattr(Consultation, field):
+                        conditions.append(getattr(Consultation, field) == value)
+                if conditions:
+                    query = query.where(and_(*conditions))
+
+            query = (
+                query.order_by(Consultation.created_at.desc()).offset(skip).limit(limit)
+            )
+            result = await db.execute(query)
+            return result.scalars().all()
+        except Exception as e:
+            logger.error(f"Error getting multiple consultations: {e}")
+            return []
 
     async def create_consultation(
         self,
@@ -90,6 +138,18 @@ class ConsultationService(BaseService):
                         detail="Appointment not found",
                     )
 
+            existing_consultation_result = await db.execute(
+                select(Consultation).where(
+                    Consultation.patient_id == consultation_data.patient_id
+                )
+            )
+            existing_consultation = existing_consultation_result.scalar_one_or_none()
+            if existing_consultation:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Patient already has an active consultation",
+                )
+
             consultation = Consultation(**consultation_data.model_dump())
             db.add(consultation)
             await db.commit()
@@ -139,6 +199,10 @@ class ConsultationService(BaseService):
 
             result = await db.execute(
                 select(Consultation)
+                .options(
+                    selectinload(Consultation.dentist),
+                    selectinload(Consultation.patient),
+                )
                 .where(Consultation.patient_id == patient_id)
                 .order_by(Consultation.created_at.desc())
                 .offset(skip)
@@ -165,6 +229,10 @@ class ConsultationService(BaseService):
 
             result = await db.execute(
                 select(Consultation)
+                .options(
+                    selectinload(Consultation.dentist),
+                    selectinload(Consultation.patient),
+                )
                 .where(Consultation.dentist_id == dentist_id)
                 .order_by(Consultation.created_at.desc())
                 .offset(skip)
@@ -238,10 +306,7 @@ class ConsultationService(BaseService):
     ) -> Dict[str, Any]:
         """Get consultation statistics for authorized users"""
         try:
-            from sqlalchemy import func
-            from datetime import datetime, timedelta
-
-            start_date = datetime.utcnow() - timedelta(days=days)
+            start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
             # Base query
             query = select(func.count(Consultation.id)).where(
