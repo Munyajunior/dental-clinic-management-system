@@ -51,7 +51,20 @@ async def list_consultations(
     consultations = await consultation_service.get_multi(
         db, skip=skip, limit=limit, filters=filters
     )
-    return [ConsultationPublic.from_orm(consultation) for consultation in consultations]
+    # Convert to response model with names
+    consultation_list = []
+    for consultation in consultations:
+        consultation_public = ConsultationPublic.from_orm(consultation)
+        # Add names to the response
+        consultation_public.dentist_name = (
+            f"{consultation.dentist.first_name} {consultation.dentist.last_name}"
+        )
+        consultation_public.patient_name = (
+            f"{consultation.patient.first_name} {consultation.patient.last_name}"
+        )
+        consultation_list.append(consultation_public)
+
+    return consultation_list
 
 
 @router.post(
@@ -165,7 +178,19 @@ async def get_patient_consultations(
     consultations = await consultation_service.get_patient_consultations(
         db, patient_id, current_user, skip, limit
     )
-    return [ConsultationPublic.from_orm(consultation) for consultation in consultations]
+    # Convert to response model with names
+    consultation_list = []
+    for consultation in consultations:
+        consultation_public = ConsultationPublic.from_orm(consultation)
+        consultation_public.dentist_name = (
+            f"{consultation.dentist.first_name} {consultation.dentist.last_name}"
+        )
+        consultation_public.patient_name = (
+            f"{consultation.patient.first_name} {consultation.patient.last_name}"
+        )
+        consultation_list.append(consultation_public)
+
+    return consultation_list
 
 
 @router.get(
@@ -185,4 +210,16 @@ async def get_dentist_consultations(
     consultations = await consultation_service.get_dentist_consultations(
         db, dentist_id, current_user, skip, limit
     )
-    return [ConsultationPublic.from_orm(consultation) for consultation in consultations]
+    # Convert to response model with names
+    consultation_list = []
+    for consultation in consultations:
+        consultation_public = ConsultationPublic.from_orm(consultation)
+        consultation_public.dentist_name = (
+            f"{consultation.dentist.first_name} {consultation.dentist.last_name}"
+        )
+        consultation_public.patient_name = (
+            f"{consultation.patient.first_name} {consultation.patient.last_name}"
+        )
+        consultation_list.append(consultation_public)
+
+    return consultation_list
