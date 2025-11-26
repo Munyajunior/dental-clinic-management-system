@@ -1,7 +1,9 @@
 # src/routes/consultations.py
 from fastapi import APIRouter, Depends, status, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
+from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import select, and_, func
 from uuid import UUID
 from db.database import get_db
 from schemas.consultation_schemas import (
@@ -10,11 +12,16 @@ from schemas.consultation_schemas import (
     ConsultationPublic,
     ConsultationDetail,
 )
+from models.consultation import Consultation
+from models.patient import Patient, PatientStatus
+from models.user import StaffRole
 from services.consultation_service import consultation_service
 from services.auth_service import auth_service
+from utils.logger import setup_logger
 from utils.rate_limiter import limiter
 
 router = APIRouter(prefix="/consultations", tags=["consultations"])
+logger = setup_logger("consultations_route")
 
 
 @router.get(
@@ -223,3 +230,162 @@ async def get_dentist_consultations(
         consultation_list.append(consultation_public)
 
     return consultation_list
+
+
+@router.get(
+    "/dentist/{dentist_id}/consulted-patients",
+    response_model=List[Dict[str, Any]],
+    summary="Get consulted patients",
+    description="Get list of patients that a dental professional has consulted",
+)
+async def get_consulted_patients(
+    dentist_id: UUID,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Get patients that a dental professional has consulted"""
+    try:
+        # Authorization check - users can only see their own consulted patients
+        if current_user.role != StaffRole.ADMIN and current_user.id != dentist_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view your own consulted patients",
+            )
+
+        # Get distinct patients that the dentist has consulted
+        consulted_patients_query = (
+            select(
+                Patient.id,
+                Patient.first_name,
+                Patient.last_name,
+                Patient.email,
+                Patient.contact_number,
+                Patient.date_of_birth,
+                Patient.gender,
+                Patient.status,
+                func.count(Consultation.id).label("consultation_count"),
+                func.max(Consultation.created_at).label("last_consultation_date"),
+            )
+            .select_from(Consultation)
+            .join(Patient, Consultation.patient_id == Patient.id)
+            .where(
+                Consultation.dentist_id == dentist_id,
+                Patient.status == PatientStatus.ACTIVE,
+            )
+            .group_by(
+                Patient.id,
+                Patient.first_name,
+                Patient.last_name,
+                Patient.email,
+                Patient.contact_number,
+                Patient.date_of_birth,
+                Patient.gender,
+                Patient.status,
+            )
+            .order_by(func.max(Consultation.created_at).desc())
+            .offset(skip)
+            .limit(limit)
+        )
+
+        result = await db.execute(consulted_patients_query)
+        consulted_patients = result.all()
+
+        # Convert to list of dictionaries
+        patients_list = []
+        for patient in consulted_patients:
+            patient_dict = {
+                "id": patient.id,
+                "first_name": patient.first_name,
+                "last_name": patient.last_name,
+                "email": patient.email,
+                "contact_number": patient.contact_number,
+                "date_of_birth": patient.date_of_birth,
+                "gender": patient.gender,
+                "status": patient.status,
+                "consultation_count": patient.consultation_count,
+                "last_consultation_date": (
+                    patient.last_consultation_date.isoformat()
+                    if patient.last_consultation_date
+                    else None
+                ),
+                "has_consultation": True,  # Since they're from consultation history
+            }
+            patients_list.append(patient_dict)
+
+        return patients_list
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting consulted patients: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve consulted patients",
+        )
+
+
+@router.get(
+    "/patients/{patient_id}/has-consultation/{dentist_id}",
+    summary="Check if dentist has consulted patient",
+    description="Check if a dental professional has conducted any consultations for a patient",
+)
+async def has_consulted_patient(
+    patient_id: UUID,
+    dentist_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Dict[str, Any]:
+    """Check if dentist has consulted patient"""
+    try:
+        # Authorization check
+        if current_user.role != StaffRole.ADMIN and current_user.id != dentist_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only check your own consultation history",
+            )
+
+        # Check if consultation exists
+        consultation_result = await db.execute(
+            select(func.count(Consultation.id)).where(
+                Consultation.patient_id == patient_id,
+                Consultation.dentist_id == dentist_id,
+            )
+        )
+        consultation_count = consultation_result.scalar() or 0
+
+        # Get latest consultation date if exists
+        latest_consultation = None
+        if consultation_count > 0:
+            latest_result = await db.execute(
+                select(Consultation)
+                .where(
+                    Consultation.patient_id == patient_id,
+                    Consultation.dentist_id == dentist_id,
+                )
+                .order_by(Consultation.created_at.desc())
+                .limit(1)
+            )
+            latest_consultation = latest_result.scalar_one_or_none()
+
+        return {
+            "has_consultation": consultation_count > 0,
+            "consultation_count": consultation_count,
+            "latest_consultation_date": (
+                latest_consultation.created_at.isoformat()
+                if latest_consultation
+                else None
+            ),
+            "patient_id": str(patient_id),
+            "dentist_id": str(dentist_id),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking consultation history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check consultation history",
+        )
