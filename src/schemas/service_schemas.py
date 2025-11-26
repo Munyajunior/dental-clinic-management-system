@@ -1,5 +1,6 @@
 # src/schemas/service_schemas.py
 from pydantic import field_validator
+import re
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
@@ -17,6 +18,22 @@ class ServiceBase(BaseSchema):
     category: ServiceCategory
     base_price: Decimal
     duration_minutes: int = 30
+
+    @field_validator("code")
+    @classmethod
+    def validate_service_code(cls, v: str) -> str:
+        if not v:
+            raise ValueError("Service code is required")
+
+        if len(v) < 2 or len(v) > 20:
+            raise ValueError("Service code must be 2-20 characters long")
+
+        if not re.match(r"^[A-Z0-9_]+$", v):
+            raise ValueError(
+                "Service code must be all uppercase and contain only letters, numbers, and underscores"
+            )
+
+        return v
 
 
 class ServiceCreate(ServiceBase):
