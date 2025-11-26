@@ -27,6 +27,7 @@ class TreatmentCreate(TreatmentBase):
     quadrants: Optional[List[str]] = None
     estimated_cost: Optional[Decimal] = None
     total_stages: int = 1
+    tenant_id: Optional[UUID] = None
 
     @field_validator("priority")
     @classmethod
@@ -82,6 +83,8 @@ class TreatmentPublic(BaseSchema):
     current_stage: Optional[str] = None
     total_stages: int
     started_at: Optional[datetime] = None
+    patient_name: Optional[str] = None
+    dentist_name: Optional[str] = None
 
 
 class TreatmentDetail(TreatmentPublic):
