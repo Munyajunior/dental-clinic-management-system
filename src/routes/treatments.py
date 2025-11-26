@@ -79,7 +79,19 @@ async def list_treatments(
             db, skip=skip, limit=limit, filters=filters, search_query=query
         )
 
-        return [TreatmentPublic.from_orm(treatment) for treatment in treatments]
+        treatment_list = []
+        for treatment in treatments:
+            treatment_public = TreatmentPublic.from_orm(treatment)
+            # Add names to reponse
+            treatment_public.dentist_name = (
+                f"{treatment.dentist.first_name} {treatment.dentist.last_name}"
+            )
+            treatment_public.patient_name = (
+                f"{treatment.patient.first_name} {treatment.patient.last_name}"
+            )
+            treatment_list.append(treatment_public)
+
+        return treatment_list
 
     except Exception as e:
         logger.error(f"Error listing treatments: {e}")
@@ -105,7 +117,10 @@ async def create_treatment(
 ) -> Any:
     """Create treatment endpoint"""
     try:
-        treatment = await treatment_service.create_treatment(db, treatment_data)
+        treatment_data.tenant_id = current_user.tenant_id
+        treatment = await treatment_service.create_treatment(
+            db, treatment_data, current_user
+        )
         return TreatmentPublic.from_orm(treatment)
 
     except HTTPException:
