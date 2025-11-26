@@ -40,7 +40,9 @@ class TreatmentService(BaseService):
     ) -> List[Treatment]:
         """Get treatments with advanced search including patient and dentist names"""
         try:
-            query = select(Treatment)
+            query = select(Treatment).options(
+                selectinload(Treatment.dentist), selectinload(Treatment.patient)
+            )
 
             # Apply basic filters
             if filters:
@@ -176,6 +178,7 @@ class TreatmentService(BaseService):
                 "dentist_id",
                 "consultation_id",
                 "appointment_id",
+                "tenant_id",
             ]:
                 if field in treatment_dict and treatment_dict[field]:
                     if isinstance(treatment_dict[field], str):
