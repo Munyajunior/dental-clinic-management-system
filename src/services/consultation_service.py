@@ -138,18 +138,6 @@ class ConsultationService(BaseService):
                         detail="Appointment not found",
                     )
 
-            existing_consultation_result = await db.execute(
-                select(Consultation).where(
-                    Consultation.patient_id == consultation_data.patient_id
-                )
-            )
-            existing_consultation = existing_consultation_result.scalar_one_or_none()
-            if existing_consultation:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Patient already has an active consultation",
-                )
-
             consultation = Consultation(**consultation_data.model_dump())
             db.add(consultation)
             await db.commit()
