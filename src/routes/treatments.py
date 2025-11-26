@@ -9,12 +9,14 @@ from fastapi import (
     Request,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import List, Optional, Any, Dict
 from uuid import UUID
 from datetime import datetime, timedelta
 import json
 
 from db.database import get_db
+from models.patient import Patient
 from schemas.treatment_schemas import (
     TreatmentCreate,
     TreatmentUpdate,
@@ -536,6 +538,50 @@ async def get_dentist_treatment_statistics(
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve dentist statistics",
+        )
+
+
+@router.get(
+    "/patients/{patient_id}/can-create-treatment",
+    summary="Check if user can create treatment for patient",
+    description="Check if current user is authorized to create treatment for specified patient",
+)
+async def can_create_treatment_for_patient(
+    patient_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Dict[str, Any]:
+    """Check if user can create treatment for patient"""
+    try:
+        # Verify patient exists
+        patient_result = await db.execute(
+            select(Patient).where(Patient.id == patient_id)
+        )
+        patient = patient_result.scalar_one_or_none()
+
+        if not patient:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND, detail="Patient not found"
+            )
+
+        # Check authorization using the same logic as treatment creation
+        can_create = await treatment_service._can_user_create_treatment(
+            db, current_user, patient
+        )
+
+        return {
+            "can_create": can_create,
+            "patient_id": patient_id,
+            "user_id": current_user.id,
+            "user_role": current_user.role.value,
+            "patient_assigned_to": patient.assigned_dentist_id,
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking treatment creation authorization: {e}")
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check treatment creation authorization",
         )
 
 
