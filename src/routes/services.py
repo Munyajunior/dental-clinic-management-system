@@ -58,7 +58,7 @@ async def create_service(
 ) -> Any:
     """Create service endpoint"""
     # Only admins and managers can create services
-    if current_user.role not in ["admin", "manager"]:
+    if current_user.role not in ["admin", "manager", "dentist", "receptionist"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to create services",
@@ -104,8 +104,8 @@ async def update_service(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """Update service endpoint"""
-    # Only admins and managers can update services
-    if current_user.role not in ["admin", "manager"]:
+    # Only admins and managers, dentist, receptionist can update services
+    if current_user.role not in ["admin", "manager", "dentist", "receptionist"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update services",
