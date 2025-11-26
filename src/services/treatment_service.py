@@ -9,8 +9,8 @@ from fastapi import HTTPException, status
 from models.treatment import Treatment, TreatmentStatus
 from models.treatment_item import TreatmentItem
 from models.consultation import Consultation
-from models.patient import Patient
-from models.user import User
+from models.patient import Patient, PatientStatus
+from models.user import User, StaffRole
 from models.service import Service
 from schemas.treatment_schemas import (
     TreatmentCreate,
@@ -102,14 +102,15 @@ class TreatmentService(BaseService):
             return []
 
     async def create_treatment(
-        self, db: AsyncSession, treatment_data: TreatmentCreate
+        self, db: AsyncSession, treatment_data: TreatmentCreate, current_user: User
     ) -> Treatment:
-        """Create new treatment with validation"""
+        """Create new treatment with authorization check"""
         try:
             # Verify patient exists and is active
             patient_result = await db.execute(
                 select(Patient).where(
-                    Patient.id == treatment_data.patient_id, Patient.is_active
+                    Patient.id == treatment_data.patient_id,
+                    Patient.status == PatientStatus.ACTIVE,
                 )
             )
             patient = patient_result.scalar_one_or_none()
@@ -119,33 +120,55 @@ class TreatmentService(BaseService):
                     detail="Patient not found or inactive",
                 )
 
+            # AUTHORIZATION CHECK: Verify user can create treatment for this patient
+            can_create_treatment = await self._can_user_create_treatment(
+                db, current_user, patient
+            )
+            if not can_create_treatment:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are not authorized to create treatments for this patient. "
+                    "You must be assigned to the patient and have conducted a consultation.",
+                )
+
             # Verify dentist exists and is active
             dentist_result = await db.execute(
-                select(User).where(User.id == treatment_data.dentist_id, User.is_active)
+                select(User).where(
+                    User.id == treatment_data.dentist_id,
+                    User.is_active == True,
+                    User.role.in_(
+                        [
+                            StaffRole.DENTIST,
+                            StaffRole.THERAPIST,
+                            StaffRole.HYGIENIST,
+                        ]
+                    ),
+                )
             )
             dentist = dentist_result.scalar_one_or_none()
             if not dentist:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Dentist not found or inactive",
+                    detail="Dental professional not found or inactive",
                 )
 
-            # If consultation_id is provided, verify it exists
+            # If consultation_id is provided, verify it exists and belongs to this patient
             if treatment_data.consultation_id:
                 consultation_result = await db.execute(
                     select(Consultation).where(
-                        Consultation.id == treatment_data.consultation_id
+                        Consultation.id == treatment_data.consultation_id,
+                        Consultation.patient_id == treatment_data.patient_id,
                     )
                 )
                 consultation = consultation_result.scalar_one_or_none()
                 if not consultation:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Consultation not found",
+                        detail="Consultation not found for this patient",
                     )
 
             # Convert to dict and handle UUID serialization
-            treatment_dict = treatment_data.dict()
+            treatment_dict = treatment_data.model_dump()
 
             # Ensure proper UUID handling
             for field in [
@@ -170,7 +193,7 @@ class TreatmentService(BaseService):
             await db.refresh(treatment)
 
             logger.info(
-                f"Created new treatment: {treatment.id} for patient {patient.id}"
+                f"Created new treatment: {treatment.id} for patient {patient.id} by user {current_user.id}"
             )
             return treatment
 
@@ -183,6 +206,57 @@ class TreatmentService(BaseService):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create treatment",
             )
+
+    async def _can_user_create_treatment(
+        self, db: AsyncSession, user: User, patient: Patient
+    ) -> bool:
+        """Check if user can create treatment for this patient"""
+
+        # Admin and manager users have all privileges
+        if user.role in [StaffRole.ADMIN, StaffRole.MANAGER]:
+            return True
+
+        # Dental professionals (dentist, therapist, hygienist) need to meet conditions
+        if user.role in [StaffRole.DENTIST, StaffRole.THERAPIST, StaffRole.HYGIENIST]:
+            # Condition 1: Must be assigned to the patient
+            if patient.assigned_dentist_id != user.id:
+                logger.warning(
+                    f"User {user.id} not assigned to patient {patient.id}. "
+                    f"Patient assigned to: {patient.assigned_dentist_id}"
+                )
+                return False
+
+            # Condition 2: Must have conducted at least one consultation for this patient
+            consultation_count = await self._get_user_consultation_count_for_patient(
+                db, user.id, patient.id
+            )
+
+            if consultation_count == 0:
+                logger.warning(
+                    f"User {user.id} has not conducted any consultations for patient {patient.id}"
+                )
+                return False
+
+            return True
+
+        # Other roles cannot create treatments
+        return False
+
+    async def _get_user_consultation_count_for_patient(
+        self, db: AsyncSession, user_id: UUID, patient_id: UUID
+    ) -> int:
+        """Get count of consultations conducted by user for this patient"""
+        try:
+            result = await db.execute(
+                select(func.count(Consultation.id)).where(
+                    Consultation.dentist_id == user_id,
+                    Consultation.patient_id == patient_id,
+                )
+            )
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error getting consultation count: {e}")
+            return 0
 
     async def add_progress_note(
         self,
