@@ -20,6 +20,19 @@ class TreatmentBase(BaseSchema):
     appointment_id: Optional[UUID] = None
 
 
+class TreatmentItemCreateRequest(BaseSchema):
+    """Schema for creating treatment items in requests"""
+
+    service_id: UUID
+    quantity: int = 1
+    unit_price: Optional[Decimal] = None
+    tooth_number: Optional[str] = None
+    surface: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = "planned"
+    tenant_id: Optional[UUID] = None
+
+
 class TreatmentCreate(TreatmentBase):
     """Schema for creating a treatment"""
 
@@ -29,7 +42,7 @@ class TreatmentCreate(TreatmentBase):
     estimated_cost: Optional[Decimal] = None
     total_stages: int = 1
     tenant_id: Optional[UUID] = None
-    treatment_items: List[Dict[str, Any]] = []
+    treatment_items: List[TreatmentItemCreateRequest] = []
     estimated_completion_date: Optional[datetime] = None
 
     @field_validator("priority")
