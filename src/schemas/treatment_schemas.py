@@ -1,5 +1,6 @@
 # src/schemas/treatment_schemas.py
 from pydantic import field_validator, ConfigDict
+import re
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
@@ -28,6 +29,8 @@ class TreatmentCreate(TreatmentBase):
     estimated_cost: Optional[Decimal] = None
     total_stages: int = 1
     tenant_id: Optional[UUID] = None
+    treatment_items: List[Dict[str, Any]] = []
+    estimated_completion_date: Optional[datetime] = None
 
     @field_validator("priority")
     @classmethod
@@ -35,6 +38,17 @@ class TreatmentCreate(TreatmentBase):
         valid_priorities = ["emergency", "urgent", "routine"]
         if v not in valid_priorities:
             raise ValueError(f'Priority must be one of: {", ".join(valid_priorities)}')
+        return v
+
+    @field_validator("treatment_items")
+    @classmethod
+    def validate_treatment_items(cls, v: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Validate treatment items structure"""
+        for item in v:
+            if "service_id" not in item:
+                raise ValueError("Each treatment item must have a service_id")
+            if "quantity" in item and item["quantity"] < 1:
+                raise ValueError("Quantity must be at least 1")
         return v
 
 
@@ -52,6 +66,8 @@ class TreatmentUpdate(BaseSchema):
     estimated_cost: Optional[Decimal] = None
     actual_cost: Optional[Decimal] = None
     progress_notes: Optional[List[Dict[str, Any]]] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 
 class TreatmentInDB(IDMixin, TenantMixin, TreatmentBase, TimestampMixin):
@@ -65,6 +81,7 @@ class TreatmentInDB(IDMixin, TenantMixin, TreatmentBase, TimestampMixin):
     current_stage: Optional[str] = None
     total_stages: int
     estimated_cost: Optional[Decimal] = None
+    estimated_completion_date: Optional[datetime] = None
     actual_cost: Optional[Decimal] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -80,11 +97,14 @@ class TreatmentPublic(BaseSchema):
     status: TreatmentStatus
     priority: str
     estimated_cost: Optional[Decimal] = None
+    estimated_completion_date: Optional[datetime] = None
     current_stage: Optional[str] = None
     total_stages: int
     started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     patient_name: Optional[str] = None
     dentist_name: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class TreatmentDetail(TreatmentPublic):
@@ -95,9 +115,9 @@ class TreatmentDetail(TreatmentPublic):
     quadrants: Optional[List[str]] = None
     progress_notes: List[Dict[str, Any]]
     actual_cost: Optional[Decimal] = None
-    completed_at: Optional[datetime] = None
-    dentist_name: str
-    patient_name: str
+    consultation_id: Optional[UUID] = None
+    appointment_id: Optional[UUID] = None
+    updated_at: Optional[datetime] = None
 
 
 class TreatmentProgressNote(BaseSchema):
@@ -126,7 +146,28 @@ class TreatmentItemBase(BaseSchema):
 class TreatmentItemCreate(TreatmentItemBase):
     """Schema for creating a treatment item"""
 
-    pass
+    unit_price: Optional[Decimal] = (
+        None  # Make optional, will use service price if not provided
+    )
+    status: Optional[str] = "planned"
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("Quantity must be at least 1")
+        if v > 100:
+            raise ValueError("Quantity cannot exceed 100")
+        return v
+
+    @field_validator("tooth_number")
+    @classmethod
+    def validate_tooth_number(cls, v: Optional[str]) -> Optional[str]:
+        if v and not re.match(r"^[1-8][1-5]?$|^[1-3][0-2]?$", v):
+            raise ValueError(
+                "Invalid tooth number format. Use FDI notation (e.g., 11, 12)"
+            )
+        return v
 
 
 class TreatmentItemInDB(IDMixin, TreatmentItemBase, TimestampMixin):
@@ -152,6 +193,9 @@ class TreatmentItemPublic(BaseSchema):
     status: str
     tooth_number: Optional[str] = None
     surface: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 
 class TreatmentSearch(BaseSchema):
