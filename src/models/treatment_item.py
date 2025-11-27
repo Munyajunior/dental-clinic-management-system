@@ -19,6 +19,7 @@ from db.database import Base
 
 class TreatmentItemStatus(str, PyEnum):
     PLANNED = "planned"
+    IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 
