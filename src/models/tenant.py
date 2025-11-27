@@ -1,5 +1,6 @@
 # src/models/tenant.py
 import uuid
+import base64
 from sqlalchemy import (
     Column,
     String,
@@ -9,6 +10,7 @@ from sqlalchemy import (
     JSON,
     Integer,
     Boolean,
+    LargeBinary,
     Float,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -68,6 +70,10 @@ class Tenant(Base):
             "Sunday": "Closed",
         },
     )
+
+    # tenant logo
+    profile_logo = Column(LargeBinary, nullable=True)
+    profile_logo_type = Column(String(50), nullable=True)
 
     # Tenant Status & Tier
     tier = Column(Enum(TenantTier), default=TenantTier.TRIAL, nullable=False)
@@ -138,21 +144,21 @@ class Tenant(Base):
         """Check if tenant is active and not expired"""
         return self.status in [
             TenantStatus.ACTIVE,
-            TenantStatus.TRIAL,
-            TenantStatus.GRACE_PERIOD,
+            TenantStatus.SUSPENDED,
+            TenantStatus.DEACTIVATED,
         ]
 
     @property
     def is_trial(self) -> bool:
         """Check if tenant is in trial period"""
-        return self.status == TenantStatus.TRIAL
+        return self.status == TenantTier.TRIAL
 
     @property
     def trial_days_remaining(self) -> int:
         """Calculate remaining trial days"""
         if not self.trial_ends_at or not self.is_trial:
             return 0
-        remaining = self.trial_ends_at - datetime.utcnow()
+        remaining = self.trial_ends_at - datetime.now(timezone.utc)
         return max(0, remaining.days)
 
     @property
@@ -172,6 +178,17 @@ class Tenant(Base):
     def can_add_patient(self) -> bool:
         """Check if tenant can add another patient"""
         return self.current_patient_count < self.max_patients
+
+    def set_tenant_logo(self, image_data: bytes, content_type: str):
+        """Store profile picture in the database."""
+        self.tenant_logo = image_data
+        self.tenant_logo_type = content_type
+
+    def get_tenant_logo_base64(self):
+        """Get profile picture as base64 encoded string."""
+        if self.tenant_logo and self.tenant_logo_type:
+            return f"data:{self.tenant_logo_type};base64,{base64.b64encode(self.tenant_logo).decode('utf-8')}"
+        return None
 
     @classmethod
     async def create_tenant(cls, session, **kwargs):
