@@ -84,7 +84,6 @@ async def register_tenant(
         return TenantPublic.from_orm(tenant)
 
     except HTTPException:
-        await db.rollback()
         raise
     except Exception as e:
         await db.rollback()
