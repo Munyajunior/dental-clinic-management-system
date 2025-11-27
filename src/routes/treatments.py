@@ -10,6 +10,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List, Optional, Any, Dict
 from uuid import UUID
 from datetime import datetime, timedelta
@@ -31,6 +32,7 @@ from schemas.treatment_schemas import (
     TreatmentAnalytics,
     TreatmentTemplate,
 )
+from models.treatment_item import TreatmentItem
 from services.treatment_service import treatment_service
 from services.treatment_template_service import treatment_template_service
 from services.auth_service import auth_service
@@ -313,6 +315,56 @@ async def add_treatment_item(
             status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
         )
     return TreatmentPublic.from_orm(treatment)
+
+
+@router.post(
+    "/{treatment_id}/items/bulk",
+    response_model=List[TreatmentItemPublic],
+    summary="Bulk create treatment items",
+    description="Create multiple treatment items for a treatment",
+)
+@limiter.limit("100/minute")
+async def bulk_create_treatment_items(
+    request: Request,
+    treatment_id: UUID,
+    items_data: List[TreatmentItemCreate],
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(auth_service.get_current_user),
+) -> Any:
+    """Bulk create treatment items endpoint"""
+    try:
+        treatment = await treatment_service.get(db, treatment_id)
+        if not treatment:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
+            )
+
+        created_items = []
+        for item_data in items_data:
+            treatment_item = await treatment_service.add_treatment_item(
+                db, treatment_id, item_data
+            )
+            if treatment_item:
+                # Get the created item with service details
+                item_result = await db.execute(
+                    select(TreatmentItem)
+                    .options(selectinload(TreatmentItem.service))
+                    .where(TreatmentItem.id == treatment_item.id)
+                )
+                item_with_service = item_result.scalar_one_or_none()
+                if item_with_service:
+                    created_items.append(item_with_service)
+
+        return [TreatmentItemPublic.from_orm(item) for item in created_items]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk creating treatment items: {e}")
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create treatment items",
+        )
 
 
 @router.get(
