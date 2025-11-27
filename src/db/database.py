@@ -225,7 +225,7 @@ async def setup_rls():
             # Create schema for application settings
             await conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
 
-            # Create function to set tenant context - FIXED syntax
+            # Create function to set tenant context
             await conn.execute(
                 text(
                     """
@@ -277,6 +277,25 @@ async def setup_rls():
 
         for table in tables_with_tenant:
             try:
+                # First check if the table exists
+                result = await conn.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_schema = 'public' 
+                            AND table_name = :table_name
+                        )
+                    """
+                    ),
+                    {"table_name": table},
+                )
+                table_exists = result.scalar()
+
+                if not table_exists:
+                    logger.warning(f"Table {table} does not exist, skipping RLS setup")
+                    continue
+
                 # Enable RLS on table
                 await conn.execute(
                     text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
@@ -306,6 +325,24 @@ async def setup_rls():
 
         # Special policy for tenants table
         try:
+            # Check if tenants table exists
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'tenants'
+                    )
+                """
+                )
+            )
+            tenants_exists = result.scalar()
+
+            if not tenants_exists:
+                logger.warning("Tenants table does not exist, skipping RLS setup")
+                return
+
             await conn.execute(text("ALTER TABLE tenants ENABLE ROW LEVEL SECURITY"))
 
             # Drop existing policies
