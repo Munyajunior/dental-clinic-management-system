@@ -1,8 +1,8 @@
-"""auto generate
+"""auto migration
 
-Revision ID: 0499970ba703
+Revision ID: b59ee32519a8
 Revises: 
-Create Date: 2025-11-27 16:34:14.338840
+Create Date: 2025-11-27 23:51:51.909626
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0499970ba703'
+revision: str = 'b59ee32519a8'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -29,6 +29,8 @@ def upgrade() -> None:
     sa.Column('contact_phone', sa.String(length=20), nullable=True),
     sa.Column('address', sa.Text(), nullable=True),
     sa.Column('office_hours', sa.JSON(), nullable=False),
+    sa.Column('profile_logo', sa.LargeBinary(), nullable=True),
+    sa.Column('profile_logo_type', sa.String(length=50), nullable=True),
     sa.Column('tier', sa.Enum('TRIAL', 'BASIC', 'PROFESSIONAL', 'ENTERPRISE', name='tenanttier'), nullable=False),
     sa.Column('payment_status', sa.Enum('ACTIVE', 'SUSPENDED', 'TRIAL', 'CANCELLED', 'PENDING', 'GRACE_PERIOD', name='tenantpaymentstatus'), nullable=False),
     sa.Column('status', sa.Enum('ACTIVE', 'SUSPENDED', 'DEACTIVATED', name='tenantstatus'), nullable=False),
