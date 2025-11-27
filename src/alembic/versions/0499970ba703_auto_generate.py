@@ -1,8 +1,8 @@
-"""auto migration
+"""auto generate
 
-Revision ID: bb6e604cc9ca
+Revision ID: 0499970ba703
 Revises: 
-Create Date: 2025-11-24 14:26:59.870760
+Create Date: 2025-11-27 16:34:14.338840
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'bb6e604cc9ca'
+revision: str = '0499970ba703'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -477,6 +477,7 @@ def upgrade() -> None:
     sa.Column('total_stages', sa.Integer(), nullable=True),
     sa.Column('estimated_cost', sa.Numeric(precision=10, scale=2), nullable=True),
     sa.Column('actual_cost', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('estimated_completion_date', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
@@ -519,7 +520,7 @@ def upgrade() -> None:
     sa.Column('service_id', sa.UUID(), nullable=False),
     sa.Column('quantity', sa.Integer(), nullable=True),
     sa.Column('unit_price', sa.Numeric(precision=10, scale=2), nullable=False),
-    sa.Column('status', sa.Enum('PLANNED', 'COMPLETED', 'CANCELLED', name='treatmentitemstatus'), nullable=True),
+    sa.Column('status', sa.Enum('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', name='treatmentitemstatus'), nullable=True),
     sa.Column('tooth_number', sa.String(length=10), nullable=True),
     sa.Column('surface', sa.String(length=10), nullable=True),
     sa.Column('notes', sa.Text(), nullable=True),
