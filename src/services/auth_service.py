@@ -2092,89 +2092,28 @@ class AuthService:
             "session_id": str(session_id),
         }
 
-    async def create_tenant_admin_user(
-        self,
-        db: AsyncSession,
-        tenant: Tenant,
-        email: str,
-        background_tasks: BackgroundTasks,
-    ) -> User:
-        """Create default admin user for new tenant"""
-        # Generate temporary password
-        temp_password = self.generate_pronounceable_password()
-
-        try:
-            # Create UserCreate instance with all required fields
-            user_data = UserCreate(
-                email=email,
-                password=temp_password,
-                first_name="Clinic",
-                last_name="Admin",
-                contact_number="",  # Required but can be empty
-                gender=GenderEnum.OTHER,
-                role=StaffRole.ADMIN,
-                specialization=None,
-                license_number=None,
-                employee_id=None,
-                permissions={
-                    "Admin": [
-                        "user_manage",
-                        "patient_manage",
-                        "appointment_manage",
-                        "prescription_manage",
-                        "medical_records_manage",
-                        "services_manage",
-                        "invoice_manage",
-                        "treatment_manage",
-                        "report_view",
-                        "settings_manage",
-                    ]
-                },
-                is_active=True,
-            )
-
-            user = await self.create_user(
-                db, user_data, background_tasks, str(tenant.slug), str(tenant.id)
-            )
-
-            logger.info(
-                f"Created tenant admin user: {email} for tenant: {tenant.name} with password: {temp_password}"
-            )
-
-            return user
-
-        except Exception as e:
-            logger.error(f"Failed to create tenant admin user: {e}")
-            raise
-
-    async def send_tenant_welcome_email_sync(
+    async def send_user_welcome_email_sync(
         self,
         db: AsyncSession,
         user_id: str,
         temp_password: str,
-        tenant_slug: str,
-        default_admin_user: bool = True,
     ):
-        """Async wrapper to send welcome tenant email (background task)"""
+        """Async wrapper to send welcome user email (background task)"""
         asyncio.create_task(
-            self._send_tenant_welcome_email_async(
+            self._send_user_welcome_email_async(
                 db,
                 UUID(user_id),
                 temp_password,
-                tenant_slug,
-                default_admin_user,
             )
         )
 
-    async def _send_tenant_welcome_email_async(
+    async def _send_user_welcome_email_async(
         self,
         db: AsyncSession,
         user_id: UUID,
         temp_password: str,
-        tenant_slug: str,
-        default_admin_user: bool = True,
     ):
-        """Async function for sending tenant welcome email"""
+        """Async function for sending user welcome email"""
 
         async with AsyncSessionLocal() as session:
             try:
@@ -2186,23 +2125,9 @@ class AuthService:
                     logger.error(f"User not found for welcome email: {user_id}")
                     return
 
-                # Also get tenant info for the email
-                result = await session.execute(
-                    select(Tenant).where(Tenant.slug == tenant_slug)
+                await email_integration_service.send_welcome_email_to_staff(
+                    db, user_id, temp_password
                 )
-                tenant = result.scalar_one_or_none()
-
-                await email_service.send_tenant_welcome_email(
-                    user_email=str(user.email),
-                    user_name=f"{user.first_name} {user.last_name}",
-                    temp_password=temp_password,
-                    tenant_slug=str(tenant.slug),
-                )
-
-                if not default_admin_user:
-                    await email_integration_service.send_welcome_email_to_staff(
-                        db, user_id, temp_password
-                    )
 
             except Exception as e:
                 logger.error(
@@ -2488,13 +2413,10 @@ class AuthService:
         db: AsyncSession,
         user_data: UserCreate,
         background_tasks: BackgroundTasks,
-        tenant_slug: Optional[str] = None,
         tenant_id: Optional[str] = None,
-        create_default_user: bool = True,
     ) -> User:
         """Create user - automatically uses current tenant context if not specified"""
         try:
-            default_admin_user: bool = create_default_user
             # Validate password strength
             is_valid, errors = password_policy_service.validate_password_strength(
                 user_data.password
@@ -2584,23 +2506,15 @@ class AuthService:
             if not isinstance(user_settings, dict):
                 user_settings = {}
 
-            # Set security defaults based on user type
-            if default_admin_user:
-                security_defaults = {
-                    "login_count": 0,
-                    "account_locked_until": None,
-                    "temporary_password": True,
-                    "force_password_reset": True,  # Force reset on first login
-                    "password_changed_at": get_utc_now().isoformat(),
-                }
-            else:
-                security_defaults = {
-                    "login_count": 0,
-                    "account_locked_until": None,
-                    "temporary_password": False,
-                    "force_password_reset": False,
-                    "password_changed_at": get_utc_now().isoformat(),
-                }
+            # Set security defaults
+
+            security_defaults = {
+                "login_count": 0,
+                "account_locked_until": None,
+                "temporary_password": False,
+                "force_password_reset": False,
+                "password_changed_at": get_utc_now().isoformat(),
+            }
 
             # Merge settings safely
             for key, value in security_defaults.items():
@@ -2649,12 +2563,10 @@ class AuthService:
 
             # Send welcome email with setup instructions
             background_tasks.add_task(
-                self.send_tenant_welcome_email_sync,
+                self.send_user_welcome_email_sync,
                 db,
                 str(user.id),
                 user_data.password,
-                tenant_slug,
-                default_admin_user,
             )
 
             return user
