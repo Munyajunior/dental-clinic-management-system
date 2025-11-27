@@ -1,5 +1,6 @@
 # src/services/treatment_service.py
 from typing import List, Optional, Dict, Any
+from decimal import Decimal
 from uuid import UUID
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -189,9 +190,27 @@ class TreatmentService(BaseService):
                                 status_code=status.HTTP_400_BAD_REQUEST,
                                 detail=f"Invalid {field} format",
                             )
+            # Handle date fields
+            if treatment_dict.get("started_at"):
+                if isinstance(treatment_dict["started_at"], str):
+                    treatment_dict["started_at"] = datetime.fromisoformat(
+                        treatment_dict["started_at"].replace("Z", "+00:00")
+                    )
 
+            # Create the treatment
             treatment = Treatment(**treatment_dict)
             db.add(treatment)
+            await db.flush()  # Get the treatment ID without committing
+
+            # Create treatment items if provided
+            if (
+                hasattr(treatment_data, "treatment_items")
+                and treatment_data.treatment_items
+            ):
+                await self._create_treatment_items(
+                    db, treatment.id, treatment_data.treatment_items
+                )
+
             await db.commit()
             await db.refresh(treatment)
 
@@ -201,6 +220,7 @@ class TreatmentService(BaseService):
             return treatment
 
         except HTTPException:
+            await db.rollback()
             raise
         except Exception as e:
             await db.rollback()
@@ -209,6 +229,81 @@ class TreatmentService(BaseService):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create treatment",
             )
+
+    async def _create_treatment_items(
+        self,
+        db: AsyncSession,
+        treatment_id: UUID,
+        treatment_items_data: List[Dict[str, Any]],
+    ) -> None:
+        """Create treatment items for a treatment"""
+        try:
+            for item_data in treatment_items_data:
+                # Verify service exists and is active
+                service_result = await db.execute(
+                    select(Service).where(
+                        Service.id == item_data.get("service_id"),
+                        Service.status == "active",
+                    )
+                )
+                service = service_result.scalar_one_or_none()
+
+                if not service:
+                    logger.warning(
+                        f"Service {item_data.get('service_id')} not found or inactive, skipping"
+                    )
+                    continue
+
+                # Create treatment item
+                treatment_item = TreatmentItem(
+                    treatment_id=treatment_id,
+                    service_id=item_data.get("service_id"),
+                    quantity=item_data.get("quantity", 1),
+                    unit_price=service.base_price,  # Use service base price
+                    tooth_number=item_data.get("tooth_number"),
+                    surface=item_data.get("surface"),
+                    notes=item_data.get("notes"),
+                    status=item_data.get("status", "planned"),
+                )
+
+                db.add(treatment_item)
+                logger.debug(
+                    f"Created treatment item for treatment {treatment_id}, service {service.id}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error creating treatment items: {e}")
+            raise
+
+    async def recalculate_treatment_cost(
+        self, db: AsyncSession, treatment_id: UUID
+    ) -> Decimal:
+        """Recalculate and update treatment cost based on items"""
+        try:
+            treatment = await self.get(db, treatment_id)
+            if not treatment:
+                return Decimal("0.00")
+
+            # Get all treatment items
+            items = await self.get_treatment_items(db, treatment_id)
+
+            # Calculate total cost
+            total_cost = sum(
+                Decimal(str(item.quantity)) * Decimal(str(item.unit_price))
+                for item in items
+            )
+
+            # Update treatment cost
+            treatment.estimated_cost = total_cost
+            await db.commit()
+
+            logger.info(f"Recalculated treatment {treatment_id} cost: {total_cost}")
+            return total_cost
+
+        except Exception as e:
+            logger.error(f"Error recalculating treatment cost: {e}")
+            await db.rollback()
+            return Decimal("0.00")
 
     async def _can_user_create_treatment(
         self, db: AsyncSession, user: User, patient: Patient
