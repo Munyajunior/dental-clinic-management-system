@@ -18,6 +18,7 @@ from schemas.treatment_schemas import (
     TreatmentUpdate,
     TreatmentProgressNote,
     TreatmentItemCreate,
+    TreatmentItemCreateRequest,
 )
 from utils.logger import setup_logger
 from .base_service import BaseService
@@ -171,7 +172,7 @@ class TreatmentService(BaseService):
                     )
 
             # Convert to dict and handle UUID serialization
-            treatment_dict = treatment_data.model_dump()
+            treatment_dict = treatment_data.model_dump(exclude={"treatment_items"})
 
             # Ensure proper UUID handling
             for field in [
@@ -207,6 +208,8 @@ class TreatmentService(BaseService):
                 hasattr(treatment_data, "treatment_items")
                 and treatment_data.treatment_items
             ):
+                for item in treatment_data.treatment_items:
+                    item.tenant_id = treatment_data.tenant_id
                 await self._create_treatment_items(
                     db, treatment.id, treatment_data.treatment_items
                 )
@@ -234,7 +237,7 @@ class TreatmentService(BaseService):
         self,
         db: AsyncSession,
         treatment_id: UUID,
-        treatment_items_data: List[Dict[str, Any]],
+        treatment_items_data: List[TreatmentItemCreateRequest],
     ) -> None:
         """Create treatment items for a treatment"""
         try:
@@ -242,7 +245,7 @@ class TreatmentService(BaseService):
                 # Verify service exists and is active
                 service_result = await db.execute(
                     select(Service).where(
-                        Service.id == item_data.get("service_id"),
+                        Service.id == item_data.service_id,
                         Service.status == "active",
                     )
                 )
@@ -250,23 +253,35 @@ class TreatmentService(BaseService):
 
                 if not service:
                     logger.warning(
-                        f"Service {item_data.get('service_id')} not found or inactive, skipping"
+                        f"Service {item_data.service_id} not found or inactive, skipping"
                     )
                     continue
 
-                # Create treatment item
+                # Get unit price - use provided price or service base price
+                unit_price = item_data.unit_price
+                if unit_price is None:
+                    unit_price = service.base_price
+                else:
+                    # Convert to Decimal if it's a string or float
+                    try:
+                        unit_price = Decimal(str(unit_price))
+                    except (ValueError, TypeError):
+                        unit_price = service.base_price
+
+                # Create treatment item as a model instance, not a dict
                 treatment_item = TreatmentItem(
                     treatment_id=treatment_id,
-                    service_id=item_data.get("service_id"),
-                    quantity=item_data.get("quantity", 1),
-                    unit_price=service.base_price,  # Use service base price
-                    tooth_number=item_data.get("tooth_number"),
-                    surface=item_data.get("surface"),
-                    notes=item_data.get("notes"),
-                    status=item_data.get("status", "planned"),
+                    service_id=item_data.service_id,
+                    quantity=item_data.quantity,
+                    unit_price=unit_price,
+                    tooth_number=item_data.tooth_number,
+                    surface=item_data.surface,
+                    notes=item_data.notes,
+                    status=item_data.status or "planned",
+                    tenant_id=item_data.tenant_id,
                 )
 
-                db.add(treatment_item)
+                db.add(treatment_item)  # Add the model instance, not a dict
                 logger.debug(
                     f"Created treatment item for treatment {treatment_id}, service {service.id}"
                 )
