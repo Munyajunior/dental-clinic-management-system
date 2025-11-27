@@ -101,7 +101,6 @@ async def create_user(
         user_data=user_data,
         background_tasks=background_tasks,
         tenant_id=current_user.tenant_id,
-        create_default_user=False,
     )
     return UserPublic.from_orm_safe(user)
 
