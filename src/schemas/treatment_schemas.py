@@ -55,12 +55,14 @@ class TreatmentCreate(TreatmentBase):
 
     @field_validator("treatment_items")
     @classmethod
-    def validate_treatment_items(cls, v: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def validate_treatment_items(
+        cls, v: List[TreatmentItemCreateRequest]
+    ) -> List[TreatmentItemCreateRequest]:
         """Validate treatment items structure"""
         for item in v:
-            if "service_id" not in item:
+            if not item.service_id:
                 raise ValueError("Each treatment item must have a service_id")
-            if "quantity" in item and item["quantity"] < 1:
+            if item.quantity < 1:
                 raise ValueError("Quantity must be at least 1")
         return v
 
