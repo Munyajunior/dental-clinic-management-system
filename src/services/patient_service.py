@@ -51,9 +51,8 @@ class PatientService(BaseService):
             patient_dict["hashed_password"] = hashed_password
 
             # Handle dentist assignment
-            assigned_dentist = None
             if patient_data.assigned_dentist_id:
-                assigned_dentist = await self._validate_dentist_assignment(
+                await self._validate_dentist_assignment(
                     db, patient_data.assigned_dentist_id, patient_data.tenant_id
                 )
                 patient_dict["dentist_assignment_date"] = datetime.now(timezone.utc)
@@ -62,10 +61,6 @@ class PatientService(BaseService):
             patient = Patient(**patient_dict)
             db.add(patient)
             await db.flush()
-
-            # Update dentist patient count if assigned
-            if assigned_dentist:
-                await self._update_dentist_patient_count(db, assigned_dentist.id)
 
             await db.commit()
             await db.refresh(patient)
