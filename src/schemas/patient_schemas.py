@@ -93,6 +93,7 @@ class PatientPublic(BaseSchema):
     first_name: str
     last_name: str
     email: EmailStr
+    address: str
     contact_number: str
     date_of_birth: date
     gender: GenderEnum
