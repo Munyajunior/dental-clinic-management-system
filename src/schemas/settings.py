@@ -130,8 +130,8 @@ SETTINGS_TEMPLATES = {
         "late_fee_rate": {"type": "number", "default": 5.0, "min": 0, "max": 50},
         "currency": {
             "type": "string",
-            "default": "USD",
-            "options": ["USD", "EUR", "GBP"],
+            "default": "XAF",
+            "options": ["XAF", "USD", "EUR", "GBP"],
         },
     },
     SettingsCategory.SECURITY: {
