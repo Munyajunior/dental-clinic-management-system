@@ -75,6 +75,7 @@ class ConsultationPublic(BaseSchema):
     dentist_name: Optional[str] = None
     patient_name: Optional[str] = None
     appointment_id: Optional[UUID] = None
+    diagnosis: Optional[List[str]] = None
     chief_complaint: Optional[str] = None
     consultation_fee: Optional[Decimal] = None
     next_appointment_date: Optional[datetime] = None
@@ -90,11 +91,8 @@ class ConsultationDetail(ConsultationPublic):
     intraoral_findings: Optional[str] = None
     periodontal_assessment: Optional[Dict[str, Any]] = None
     occlusion_assessment: Optional[str] = None
-    diagnosis: Optional[List[str]] = None
     treatment_plan: Optional[List[Dict[str, Any]]] = None
     recommendations: Optional[str] = None
-    dentist_name: str
-    patient_name: str
 
 
 class PeriodontalAssessment(BaseSchema):
