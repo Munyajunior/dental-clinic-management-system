@@ -170,36 +170,58 @@ class SettingsService(BaseService):
         self,
         db: AsyncSession,
         tenant_id: UUID,
-        settings_updates: Dict[str, Any],
+        settings_updates: List[Dict[str, Any]],
         user_id: UUID,
         change_reason: Optional[str] = None,
     ) -> List[TenantSettings]:
-        """Bulk update multiple settings"""
+        """Bulk update multiple settings - handles list format from frontend"""
         updated_settings = []
 
-        for category_str, category_settings in settings_updates.items():
-            try:
-                category = SettingsCategory(category_str)
-            except ValueError:
-                logger.warning(f"Invalid settings category: {category_str}")
-                continue
+        logger.info(
+            f"Processing {len(settings_updates)} settings updates for tenant {tenant_id}"
+        )
 
-            for key, value in category_settings.items():
-                try:
-                    setting = await self.create_or_update_setting(
-                        db, tenant_id, category, key, value, user_id
+        # Process each setting in the list
+        for setting_data in settings_updates:
+            try:
+                # Extract setting components
+                category_str = setting_data.get("category")
+                key = setting_data.get("settings_key")
+                value = setting_data.get("settings_value")
+
+                # Validate required fields
+                if not all([category_str, key, value is not None]):
+                    logger.warning(
+                        f"Invalid setting data - missing required fields: {setting_data}"
                     )
-                    updated_settings.append(setting)
-                except Exception as e:
-                    logger.error(f"Failed to update setting {category}.{key}: {e}")
                     continue
 
+                # Convert category string to enum
+                try:
+                    category = SettingsCategory(category_str)
+                except ValueError:
+                    logger.warning(f"Invalid settings category: {category_str}")
+                    continue
+
+                # Update the setting
+                setting = await self.create_or_update_setting(
+                    db, tenant_id, category, key, value, user_id
+                )
+                updated_settings.append(setting)
+
+                logger.debug(f"Updated setting: {category}.{key} = {value}")
+
+            except Exception as e:
+                logger.error(f"Failed to update setting {setting_data}: {e}")
+                continue
+
+        # Create audit entry for the bulk operation
         if change_reason and updated_settings:
-            # Create bulk audit entry
             await self._create_bulk_audit_entry(
                 db, tenant_id, updated_settings, user_id, change_reason
             )
 
+        logger.info(f"Successfully updated {len(updated_settings)} settings")
         return updated_settings
 
     async def reset_to_defaults(
