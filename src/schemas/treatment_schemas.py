@@ -120,6 +120,7 @@ class TreatmentPublic(BaseSchema):
     patient_name: Optional[str] = None
     dentist_name: Optional[str] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class TreatmentDetail(TreatmentPublic):
