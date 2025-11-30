@@ -507,10 +507,17 @@ class TreatmentService(BaseService):
         try:
             result = await db.execute(
                 select(TreatmentItem)
+                .options(selectinload(TreatmentItem.service))
                 .where(TreatmentItem.treatment_id == treatment_id)
                 .order_by(TreatmentItem.created_at)
             )
-            return result.scalars().all()
+            items = result.scalars().all()
+            # Verify we have service data loaded
+            for item in items:
+                if not item.service:
+                    logger.warning(f"Treatment item {item.id} has no service data")
+
+            return items
         except Exception as e:
             logger.error(f"Error getting treatment items: {e}")
             return []
