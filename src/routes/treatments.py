@@ -381,7 +381,30 @@ async def get_treatment_items(
     """Get treatment items endpoint"""
     try:
         items = await treatment_service.get_treatment_items(db, treatment_id)
-        return [TreatmentItemPublic.from_orm(item) for item in items]
+
+        # Convert to public schema with service details
+        treatment_items_public = []
+        for item in items:
+            # Create the public schema instance
+            item_public = TreatmentItemPublic(
+                id=item.id,
+                treatment_id=item.treatment_id,
+                service_id=item.service_id,
+                service_name=item.service.name if item.service else "Unknown Service",
+                service_code=item.service.code if item.service else "N/A",
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                total_price=item.total_price,
+                status=item.status,
+                tooth_number=item.tooth_number,
+                surface=item.surface,
+                notes=item.notes,
+                created_at=item.created_at,
+                completed_at=item.completed_at,
+            )
+            treatment_items_public.append(item_public)
+
+        return treatment_items_public
 
     except Exception as e:
         logger.error(f"Error getting treatment items: {e}")
