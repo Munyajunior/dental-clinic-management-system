@@ -282,7 +282,34 @@ async def get_progress_notes(
                 status_code=http_status.HTTP_404_NOT_FOUND, detail="Treatment not found"
             )
 
-        return treatment.progress_notes or []
+        progress_notes = treatment.progress_notes or []
+
+        # Enhance progress notes with user names if available
+        enhanced_notes = []
+        for note in progress_notes:
+            enhanced_note = note.copy()
+
+            # Try to get user name if we have a recorded_by ID
+            recorded_by = note.get("recorded_by")
+            if recorded_by:
+                try:
+                    from models.user import User
+
+                    user_result = await db.execute(
+                        select(User).where(User.id == UUID(recorded_by))
+                    )
+                    user = user_result.scalar_one_or_none()
+                    if user:
+                        enhanced_note["recorded_by_name"] = (
+                            f"{user.first_name} {user.last_name}"
+                        )
+                except Exception as e:
+                    logger.debug(f"Could not fetch user for progress note: {e}")
+                    enhanced_note["recorded_by_name"] = "Unknown"
+
+            enhanced_notes.append(enhanced_note)
+
+        return enhanced_notes
 
     except HTTPException:
         raise
