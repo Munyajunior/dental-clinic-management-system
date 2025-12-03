@@ -472,7 +472,19 @@ class ResendEmailService:
         """Send tenant welcome email with fallback to logging"""
         try:
             # Create deep link for one-click login
-            deep_link = URLSchemeHandler.create_deep_link("login", tenant=tenant_slug)
+            deep_link = f"{URLSchemeHandler.SCHEME}://login?tenant={tenant_slug}"
+
+            # Create a clickable link that works across different platforms
+            clickable_link = f"""
+            <a href="{deep_link}" style="text-decoration: none; color: white; background: linear-gradient(135deg, #10b981, #059669); padding: 14px 28px; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px;">
+                Launch Dental Clinic Application
+            </a>
+            """
+
+            # Also include a fallback URL for web browsers
+            web_fallback_url = (
+                f"https://app.kwantabit-dental.com/launch?tenant={tenant_slug}"
+            )
 
             template_data = {
                 "user_name": user_name,
@@ -480,6 +492,8 @@ class ResendEmailService:
                 "temporary_password": temp_password,
                 "tenant_slug": tenant_slug,
                 "deep_link_url": deep_link,
+                "clickable_link": clickable_link,  # Add this for HTML template
+                "web_fallback_url": web_fallback_url,  # Add web fallback
                 "clinic_name": email_settings.FROM_NAME,
                 "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
                 "support_email": email_settings.FROM_EMAIL,
@@ -517,23 +531,191 @@ class ResendEmailService:
         self, user_email: str, user_name: str, reset_token: str, expiry_hours: int = 24
     ) -> EmailResponse:
         """Send password reset email with deep link"""
+        try:
 
-        # Create deep link for password reset
-        deep_link = URLSchemeHandler.create_deep_link(
-            "reset-password", token=reset_token
-        )
+            # Create deep link for password reset
+            deep_link = URLSchemeHandler.create_deep_link(
+                "reset-password", token=reset_token
+            )
 
-        template_data = {
-            "user_name": user_name,
-            "reset_token": reset_token,
-            "deep_link_url": deep_link,
-            "expiry_hours": expiry_hours,
-            "clinic_name": email_settings.FROM_NAME,
-        }
+            # Create a clickable link with proper styling for email
+            clickable_link = f"""
+            <a href="{deep_link}" class="button" style="text-decoration: none; color: white; background: linear-gradient(135deg, #ef4444, #dc2626); padding: 14px 28px; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; border: none; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);">
+                🔒 Reset Password in Application
+            </a>
+            """
 
-        return await self.send_templated_email(
-            EmailType.PASSWORD_RESET, to=[user_email], template_data=template_data
-        )
+            # Create a web fallback URL for browsers that don't support deep links
+            web_fallback_url = (
+                f"https://app.kwantabit-dental.com/reset-password?token={reset_token}"
+            )
+
+            template_data = {
+                "user_name": user_name,
+                "reset_token": reset_token,
+                "deep_link_url": deep_link,
+                "clickable_link": clickable_link,
+                "web_fallback_url": web_fallback_url,
+                "expiry_hours": expiry_hours,
+                "clinic_name": email_settings.FROM_NAME,
+            }
+
+            # Log the password reset attempt for security audit
+            logger.info(
+                f"Password reset email prepared for {user_email}. "
+                f"Deep link: {deep_link}, Expires in: {expiry_hours} hours"
+            )
+
+            return await self.send_templated_email(
+                EmailType.PASSWORD_RESET,
+                to=[user_email],
+                template_data=template_data,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to prepare password reset email: {e}")
+            # Still return a response indicating failure
+            return EmailResponse(
+                success=False,
+                error=f"Failed to prepare password reset email: {str(e)}",
+                recipients=[user_email],
+            )
+
+    async def send_password_reset_v2(
+        self,
+        user_email: str,
+        user_name: str,
+        reset_token: str,
+        tenant_slug: str = None,
+        user_agent: str = None,
+        ip_address: str = None,
+        expiry_hours: int = 24,
+    ) -> EmailResponse:
+        """Enhanced password reset email with security context and multi-platform support"""
+        try:
+            # Create deep link with security context
+            deep_link_params = {"token": reset_token}
+            if tenant_slug:
+                deep_link_params["tenant"] = tenant_slug
+            if user_agent:
+                # Hash user agent for privacy
+                import hashlib
+
+                user_agent_hash = hashlib.sha256(user_agent.encode()).hexdigest()[:8]
+                deep_link_params["context"] = user_agent_hash
+
+            deep_link = URLSchemeHandler.create_deep_link(
+                "reset-password", **deep_link_params
+            )
+
+            # Create platform-specific instructions
+            platform_info = (
+                self._detect_platform_from_user_agent(user_agent)
+                if user_agent
+                else None
+            )
+
+            template_data = {
+                "user_name": user_name,
+                "reset_token": reset_token,
+                "deep_link_url": deep_link,
+                "expiry_hours": expiry_hours,
+                "clinic_name": email_settings.FROM_NAME,
+                "support_email": email_settings.SUPPORT_EMAIL,
+                "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
+                "tenant_slug": tenant_slug if tenant_slug else "your clinic",
+                "has_tenant": tenant_slug is not None,
+                "ip_address": ip_address if ip_address else "Not available",
+                "request_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "platform": platform_info,
+                "security_context": {
+                    "token_length": len(reset_token),
+                    "token_type": "JWT" if len(reset_token) > 100 else "Simple",
+                    "requires_tenant": tenant_slug is not None,
+                },
+            }
+
+            # Security logging
+            logger.info(
+                f"Enhanced password reset for {user_email}. "
+                f"Platform: {platform_info}, IP: {ip_address}, "
+                f"Expires: {expiry_hours}h, Tenant: {tenant_slug}"
+            )
+
+            return await self.send_templated_email(
+                EmailType.PASSWORD_RESET,
+                to=[user_email],
+                template_data=template_data,
+            )
+
+        except Exception as e:
+            logger.error(f"Enhanced password reset email failed: {e}")
+            # Fall back to simple password reset
+            return await self.send_password_reset(
+                user_email, user_name, reset_token, expiry_hours
+            )
+
+    def _detect_platform_from_user_agent(self, user_agent: str) -> Dict[str, Any]:
+        """Detect platform from user agent string"""
+        try:
+            result = {
+                "device": "Unknown",
+                "os": "Unknown",
+                "browser": "Unknown",
+                "is_mobile": False,
+                "is_desktop": False,
+            }
+
+            user_agent = user_agent.lower()
+
+            # Detect OS
+            if "windows" in user_agent:
+                result["os"] = "Windows"
+                result["is_desktop"] = True
+            elif "mac" in user_agent:
+                result["os"] = "macOS"
+                result["is_desktop"] = True
+            elif "linux" in user_agent:
+                result["os"] = "Linux"
+                result["is_desktop"] = True
+            elif "android" in user_agent:
+                result["os"] = "Android"
+                result["is_mobile"] = True
+            elif "iphone" in user_agent or "ipad" in user_agent:
+                result["os"] = "iOS"
+                result["is_mobile"] = True
+
+            # Detect browser
+            if "chrome" in user_agent and "edg" not in user_agent:
+                result["browser"] = "Chrome"
+            elif "firefox" in user_agent:
+                result["browser"] = "Firefox"
+            elif "safari" in user_agent and "chrome" not in user_agent:
+                result["browser"] = "Safari"
+            elif "edg" in user_agent:
+                result["browser"] = "Edge"
+
+            # Detect device type
+            if "mobile" in user_agent:
+                result["device"] = "Mobile"
+                result["is_mobile"] = True
+            elif "tablet" in user_agent:
+                result["device"] = "Tablet"
+                result["is_mobile"] = True
+            else:
+                result["device"] = "Desktop"
+                result["is_desktop"] = True
+
+            return result
+
+        except Exception:
+            return {
+                "device": "Unknown",
+                "os": "Unknown",
+                "browser": "Unknown",
+                "is_mobile": False,
+                "is_desktop": False,
+            }
 
     async def send_email_verification(
         self, user_email: str, user_name: str, verification_token: str
@@ -865,6 +1047,102 @@ class ResendEmailService:
             test_results["service_status"] = "healthy"
 
         return test_results
+
+    async def validate_password_reset_token(
+        self, token: str, expected_email: str = None
+    ) -> Dict[str, Any]:
+        """Validate password reset token (simplified version for email service)"""
+        try:
+            # In a real implementation, you would validate against your auth service
+            # This is a simplified version for demonstration
+            import jwt
+
+            # Check token format
+            if len(token) < 20:
+                return {"valid": False, "error": "Token too short", "can_retry": True}
+
+            # Check if token looks like a JWT
+            if len(token) > 100 and token.count(".") == 2:
+                # Try to decode JWT
+                try:
+                    # This would normally use your SECRET_KEY
+                    # decoded = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+                    return {
+                        "valid": True,
+                        "type": "JWT",
+                        "expires_in": 3600,  # Example: 1 hour
+                        "email": expected_email if expected_email else "unknown",
+                        "can_reset": True,
+                    }
+                except jwt.ExpiredSignatureError:
+                    return {"valid": False, "error": "Token expired", "can_retry": True}
+                except jwt.InvalidTokenError:
+                    return {
+                        "valid": False,
+                        "error": "Invalid token",
+                        "can_retry": False,
+                    }
+
+            # Simple token validation
+            return {
+                "valid": True,
+                "type": "Simple",
+                "expires_in": 86400,  # 24 hours
+                "email": expected_email if expected_email else "unknown",
+                "can_reset": True,
+            }
+
+        except Exception as e:
+            logger.error(f"Token validation error: {e}")
+            return {
+                "valid": False,
+                "error": f"Validation error: {str(e)}",
+                "can_retry": False,
+            }
+
+    async def send_password_reset_success(
+        self,
+        user_email: str,
+        user_name: str,
+        device_info: Dict[str, Any] = None,
+        ip_address: str = None,
+    ) -> EmailResponse:
+        """Send notification that password was successfully reset"""
+        try:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+            template_data = {
+                "user_name": user_name,
+                "reset_time": current_time,
+                "clinic_name": email_settings.FROM_NAME,
+                "support_email": email_settings.SUPPORT_EMAIL,
+                "device_info": (
+                    device_info if device_info else {"type": "Unknown device"}
+                ),
+                "ip_address": ip_address if ip_address else "Not available",
+                "security_tips": [
+                    "Use a unique password for this account",
+                    "Enable two-factor authentication",
+                    "Review recent login activity",
+                    "Log out of unused devices",
+                ],
+            }
+
+            logger.info(f"Password reset success notification sent to {user_email}")
+
+            return await self.send_templated_email(
+                EmailType.SECURITY_ALERT,  # You might want to create a specific template for this
+                to=[user_email],
+                template_data=template_data,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to send password reset success email: {e}")
+            return EmailResponse(
+                success=False,
+                error=f"Failed to send success notification: {str(e)}",
+                recipients=[user_email],
+            )
 
 
 # Global email service instance
