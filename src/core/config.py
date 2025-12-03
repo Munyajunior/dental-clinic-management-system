@@ -1,11 +1,36 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator, model_validator
-
+from dataclasses import dataclass
 from sqlalchemy.engine import URL
 from typing import List
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+@dataclass
+class AppConfig:
+    """Enhanced application configuration"""
+
+    @property
+    def APP_NAME(self):
+        return "Dental Clinic Management System"
+
+    @property
+    def APP_VERSION(self):
+        return "2.0.0"
+
+    @property
+    def ORGANIZATION(self):
+        return "KwantaBit Technologies"
+
+    @property
+    def SUPPORT_EMAIL(self):
+        return "support@kwantabit.com"
+
+    @property
+    def WEBSITE(self):
+        return "https://kwantabit.com"
 
 
 class Settings(BaseSettings):
