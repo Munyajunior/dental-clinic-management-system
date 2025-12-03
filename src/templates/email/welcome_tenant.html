@@ -111,6 +111,31 @@
                 padding: 25px;
             }
         }
+        /* Deep link instructions */
+        .deeplink-instructions {
+            background: #f0f9ff;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .deeplink-code {
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        .manual-instructions {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
     </style>
 </head>
 <body>
@@ -141,17 +166,53 @@
                             <td style="padding: 8px 0;"><strong>Temporary Password:</strong></td>
                             <td style="padding: 8px 0; font-family: monospace; color: #dc2626;">{{ temporary_password }}</td>
                         </tr>
+                        <tr>
+                            <td style="padding: 8px 0;"><strong>Clinic Slug:</strong></td>
+                            <td style="padding: 8px 0; font-family: monospace;">{{ tenant_slug }}</td>
+                        </tr>
                     </table>
                 </div>
                 
                 <div style="text-align: center; margin: 25px 0;">
-                    <p style="margin-bottom: 15px; font-weight: 600; color: #065f46;">🚀 Quick Start</p>
-                    <a href="{{ deep_link_url }}" class="button">
+                    <p style="margin-bottom: 15px; font-weight: 600; color: #065f46;">🚀 Quick Start - One-Click Login</p>
+                    
+                    <!-- Clickable Deep Link Button -->
+                    <a href="{{ deep_link_url }}" class="button" onclick="trackDeepLinkClick();">
                         Launch Dental Clinic Application
                     </a>
+                    
                     <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
-                        One-click setup • Opens directly in application
+                        One-click setup • Opens directly in your application
                     </p>
+                    
+                    <div style="margin-top: 15px; font-size: 13px; color: #6b7280;">
+                        If the button doesn't work, copy this link: 
+                        <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ deep_link_url }}</code>
+                    </div>
+                </div>
+                
+                <!-- Deep Link Instructions -->
+                <div class="deeplink-instructions">
+                    <h4 style="margin: 0 0 10px 0; color: #1e40af;">🔗 Deep Link Information</h4>
+                    <p style="margin: 0 0 10px 0;">This link will automatically open your KwantaBit Dental application with your clinic pre-configured.</p>
+                    <div class="deeplink-code">
+                        {{ deep_link_url }}
+                    </div>
+                    <p style="margin: 10px 0 0 0; font-size: 13px; color: #6b7280;">
+                        <strong>Note:</strong> Make sure the application is installed on your device for the deep link to work.
+                    </p>
+                </div>
+                
+                <!-- Manual Instructions for Troubleshooting -->
+                <div class="manual-instructions">
+                    <h4 style="margin: 0 0 10px 0; color: #b45309;">🛠️ Manual Setup (If Deep Link Doesn't Work)</h4>
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Open KwantaBit Dental application</li>
+                        <li>Enter your email: <code>{{ user_email }}</code></li>
+                        <li>Enter temporary password: <code>{{ temporary_password }}</code></li>
+                        <li>Enter clinic name: <code>{{ tenant_slug }}</code></li>
+                        <li>Click "Sign In"</li>
+                    </ol>
                 </div>
                 
                 <div class="security-note">
@@ -222,7 +283,23 @@
                 <li>📧 <strong>Email:</strong> <a href="mailto:{{ support_email }}">{{ support_email }}</a></li>
                 <li>🔧 <strong>Setup Assistance:</strong> <a href="{{ setup_guide_url }}">Comprehensive Setup Guide</a></li>
                 <li>🎥 <strong>Video Tutorials:</strong> <a href="https://kwantabit.com/tutorials">Watch Tutorials</a></li>
+                <li>📱 <strong>Download Application:</strong> <a href="{{ download_url }}">Download Latest Version</a></li>
             </ul>
+            
+            <div style="border-top: 2px solid #e5e7eb; margin: 30px 0; padding-top: 20px;">
+                <h4 style="color: #065f46; margin-bottom: 10px;">🎯 Quick Actions</h4>
+                <p style="margin: 0;">
+                    <a href="{{ deep_link_url }}" style="color: #10b981; font-weight: 600; text-decoration: none; border-bottom: 2px solid #10b981; padding-bottom: 2px;">
+                        Click here to launch app
+                    </a> • 
+                    <a href="{{ setup_guide_url }}" style="color: #3b82f6; font-weight: 600; text-decoration: none; border-bottom: 2px solid #3b82f6; padding-bottom: 2px;">
+                        View setup guide
+                    </a> • 
+                    <a href="{{ download_url }}" style="color: #8b5cf6; font-weight: 600; text-decoration: none; border-bottom: 2px solid #8b5cf6; padding-bottom: 2px;">
+                        Download app
+                    </a>
+                </p>
+            </div>
             
             <p>We're committed to your success and look forward to helping you optimize your clinic operations!</p>
             
@@ -245,7 +322,38 @@
             <p style="margin: 15px 0 0 0; font-size: 11px; color: #9ca3af;">
                 If you received this email in error or did not create a clinic account, please contact our security team immediately at <a href="mailto:security@kwantabit.com" style="color: #6b7280;">security@kwantabit.com</a>
             </p>
+            <p style="margin: 15px 0 0 0; font-size: 10px; color: #9ca3af; font-style: italic;">
+                Deep Link: {{ deep_link_url }} • Application will launch with pre-filled clinic: {{ tenant_slug }}
+            </p>
         </div>
     </div>
+
+    <!-- Simple JavaScript for tracking (optional) -->
+    <script>
+        function trackDeepLinkClick() {
+            // This is a simple function that can be used for analytics
+            // In production, you might want to use a proper analytics service
+            console.log('Deep link clicked: {{ deep_link_url }}');
+            
+            // You can add Google Analytics or other tracking here
+            if (typeof gtag !== 'undefined') {
+                gtag('event', 'deep_link_click', {
+                    'event_category': 'email',
+                    'event_label': 'welcome_tenant_email',
+                    'link_url': '{{ deep_link_url }}'
+                });
+            }
+        }
+        
+        // Alternative method for email clients that strip JavaScript
+        // Add a redirect to a tracking pixel/image
+        window.onload = function() {
+            var trackingPixel = new Image();
+            trackingPixel.src = 'https://kwantabit.com/track/email_open?type=welcome_tenant&email={{ user_email|urlencode }}&tenant={{ tenant_slug|urlencode }}';
+        };
+    </script>
+    <!--  for email open tracking -->
+<img src="https://kwantabit.com/track/email.png?type=welcome_tenant&email={{ user_email|urlencode }}&tenant={{ tenant_slug|urlencode }}" 
+     width="1" height="1" style="display:none;" alt="Email Tracking Pixel">
 </body>
 </html>
