@@ -1,13 +1,13 @@
 # src/services/appointment_service.py (Updated)
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from fastapi import HTTPException, status
 from models.appointment import Appointment, AppointmentStatus, AppointmentType
 from models.user import User
-from models.patient import Patient
+from models.patient import Patient, PatientStatus
 from schemas.appointment_schemas import (
     AppointmentCreate,
     AppointmentUpdate,
@@ -47,7 +47,8 @@ class AppointmentService(BaseService):
         # Verify patient exists
         patient_result = await db.execute(
             select(Patient).where(
-                Patient.id == appointment_data.patient_id, Patient.is_active
+                Patient.id == appointment_data.patient_id,
+                Patient.status == PatientStatus.ACTIVE,
             )
         )
         patient = patient_result.scalar_one_or_none()
@@ -264,7 +265,7 @@ class AppointmentService(BaseService):
         self,
         db: AsyncSession,
         appointment_id: UUID,
-        status: AppointmentStatus,
+        apt_status: AppointmentStatus,
         cancellation_reason: Optional[str] = None,
     ) -> Optional[Appointment]:
         """Update appointment status with email notifications"""
@@ -275,15 +276,15 @@ class AppointmentService(BaseService):
             )
 
         old_status = appointment.status
-        appointment.status = status
+        appointment.status = apt_status
 
         # Set timestamps based on status
-        now = datetime.utcnow()
-        if status == AppointmentStatus.CONFIRMED:
+        now = datetime.now(timezone.utc)
+        if apt_status == AppointmentStatus.CONFIRMED:
             appointment.confirmed_at = now
-        elif status == AppointmentStatus.COMPLETED:
+        elif apt_status == AppointmentStatus.COMPLETED:
             appointment.completed_at = now
-        elif status == AppointmentStatus.CANCELLED:
+        elif apt_status == AppointmentStatus.CANCELLED:
             appointment.cancelled_at = now
             appointment.cancellation_reason = cancellation_reason
 
@@ -292,12 +293,12 @@ class AppointmentService(BaseService):
 
         # Send email notifications for status changes
         try:
-            if old_status != status:
-                if status == AppointmentStatus.CONFIRMED:
+            if old_status != apt_status:
+                if apt_status == AppointmentStatus.CONFIRMED:
                     await email_integration_service.send_appointment_confirmation_email(
                         db, appointment_id
                     )
-                elif status == AppointmentStatus.CANCELLED:
+                elif apt_status == AppointmentStatus.CANCELLED:
                     # Send cancellation email
                     await self._send_cancellation_email(db, appointment)
         except Exception as e:
@@ -342,7 +343,7 @@ class AppointmentService(BaseService):
     ) -> List[Appointment]:
         """Get upcoming appointments within the next N days"""
         try:
-            start_date = datetime.utcnow()
+            start_date = datetime.now(timezone.utc)
             end_date = start_date + timedelta(days=days)
 
             result = await db.execute(
@@ -370,7 +371,7 @@ class AppointmentService(BaseService):
     async def send_reminders_for_tomorrow(self, db: AsyncSession) -> Dict[str, Any]:
         """Send reminders for tomorrow's appointments"""
         try:
-            tomorrow = datetime.utcnow() + timedelta(days=1)
+            tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
             tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
             tomorrow_end = tomorrow.replace(
                 hour=23, minute=59, second=59, microsecond=999999
