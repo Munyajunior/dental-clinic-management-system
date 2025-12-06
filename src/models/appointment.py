@@ -54,6 +54,7 @@ class Appointment(Base):
 
     # Status
     status = Column(Enum(AppointmentStatus), default=AppointmentStatus.SCHEDULED)
+    is_urgent = Column(Boolean, default=False)
 
     # Appointment details
     reason = Column(Text, nullable=False)
