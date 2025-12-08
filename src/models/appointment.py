@@ -92,4 +92,29 @@ class Appointment(Base):
     )
 
     def __repr__(self):
-        return f"<Appointment {self.id} - {self.patient.first_name} with Dr. {self.dentist.last_name}>"
+        """Safe __repr__ that doesn't trigger lazy loading"""
+        try:
+            # Try to get patient first name without triggering lazy load
+            patient_name = getattr(self, "_patient_name", None)
+            if not patient_name and hasattr(self, "patient") and self.patient:
+                # Only access if already loaded
+                patient_name = (
+                    self.patient.first_name
+                    if hasattr(self.patient, "first_name")
+                    else "Unknown"
+                )
+
+            # Try to get dentist last name without triggering lazy load
+            dentist_name = getattr(self, "_dentist_name", None)
+            if not dentist_name and hasattr(self, "dentist") and self.dentist:
+                # Only access if already loaded
+                dentist_name = (
+                    self.dentist.last_name
+                    if hasattr(self.dentist, "last_name")
+                    else "Unknown"
+                )
+
+            return f"<Appointment {self.id} - {patient_name or 'Unknown'} with Dr. {dentist_name or 'Unknown'}>"
+        except Exception:
+            # Fallback if anything goes wrong
+            return f"<Appointment {self.id}>"
