@@ -269,43 +269,67 @@ class AppointmentService(BaseService):
         cancellation_reason: Optional[str] = None,
     ) -> Optional[Appointment]:
         """Update appointment status with email notifications"""
-        appointment = await self.get(db, appointment_id)
-        if not appointment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
-            )
-
-        old_status = appointment.status
-        appointment.status = apt_status
-
-        # Set timestamps based on status
-        now = datetime.now(timezone.utc)
-        if apt_status == AppointmentStatus.CONFIRMED:
-            appointment.confirmed_at = now
-        elif apt_status == AppointmentStatus.COMPLETED:
-            appointment.completed_at = now
-        elif apt_status == AppointmentStatus.CANCELLED:
-            appointment.cancelled_at = now
-            appointment.cancellation_reason = cancellation_reason
-
-        await db.commit()
-        await db.refresh(appointment)
-
-        # Send email notifications for status changes
         try:
-            if old_status != apt_status:
-                if apt_status == AppointmentStatus.CONFIRMED:
-                    await email_integration_service.send_appointment_confirmation_email(
-                        db, appointment_id
-                    )
-                elif apt_status == AppointmentStatus.CANCELLED:
-                    # Send cancellation email
-                    await self._send_cancellation_email(db, appointment)
-        except Exception as e:
-            logger.error(f"Failed to send status change email: {e}")
+            # Get appointment without triggering lazy loads
+            stmt = select(Appointment).where(Appointment.id == appointment_id)
+            result = await db.execute(stmt)
+            appointment = result.scalar_one_or_none()
 
-        logger.info(f"Updated appointment {appointment_id} status to {status}")
-        return appointment
+            if not appointment:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Appointment not found",
+                )
+
+            old_status = appointment.status
+            appointment.status = apt_status
+
+            # Set timestamps based on status
+            now = datetime.now(timezone.utc)
+            if apt_status == AppointmentStatus.CONFIRMED:
+                appointment.confirmed_at = now
+            elif apt_status == AppointmentStatus.COMPLETED:
+                appointment.completed_at = now
+            elif apt_status == AppointmentStatus.CANCELLED:
+                appointment.cancelled_at = now
+                appointment.cancellation_reason = cancellation_reason
+
+            await db.commit()
+            await db.refresh(appointment)
+
+            # Send email notifications for status changes
+            try:
+                if old_status != apt_status:
+                    # Load related data only if needed for emails
+                    if apt_status in [
+                        AppointmentStatus.CONFIRMED,
+                        AppointmentStatus.CANCELLED,
+                    ]:
+                        # Refresh with relationships for email
+                        await db.refresh(appointment, ["patient", "dentist"])
+
+                        if apt_status == AppointmentStatus.CONFIRMED:
+                            await email_integration_service.send_appointment_confirmation_email(
+                                db, appointment_id
+                            )
+                        elif apt_status == AppointmentStatus.CANCELLED:
+                            # Send cancellation email
+                            await self._send_cancellation_email(db, appointment)
+            except Exception as e:
+                logger.error(f"Failed to send status change email: {e}")
+                # Don't fail the appointment update if email fails
+
+            logger.info(f"Updated appointment {appointment_id} status to {apt_status}")
+            return appointment
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating appointment status: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error updating appointment status: {str(e)}",
+            )
 
     async def _send_cancellation_email(
         self, db: AsyncSession, appointment: Appointment
