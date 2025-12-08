@@ -26,14 +26,6 @@ class BaseService:
         try:
             result = await db.execute(select(self.model).where(self.model.id == id))
             item = result.scalar_one_or_none()
-            # DEBUG: Check what's returned
-            logger.debug(f"BaseService.get - Result type: {type(result)}")
-            logger.debug(f"BaseService.get - Item type: {type(item)}")
-            logger.debug(f"BaseService.get - Item: {item}")
-
-            if isinstance(item, tuple):
-                logger.error(f"TUPLE RETURNED FROM QUERY! Model: {self.model.__name__}")
-                logger.error(f"Tuple contents: {item}")
 
             return item
         except SQLAlchemyError as e:
