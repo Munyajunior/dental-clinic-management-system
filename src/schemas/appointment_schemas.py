@@ -26,6 +26,7 @@ class AppointmentCreate(AppointmentBase):
     is_urgent: bool = False
     room_id: Optional[str] = None
     equipment_required: Optional[List[str]] = None
+    tenant_id: Optional[UUID] = None
 
     @field_validator("appointment_date")
     @classmethod
@@ -79,6 +80,8 @@ class AppointmentPublic(BaseSchema):
     status: AppointmentStatus
     reason: str
     is_urgent: bool
+    patient_name: Optional[str] = None
+    dentist_name: Optional[str] = None
 
 
 class AppointmentDetail(AppointmentPublic):
