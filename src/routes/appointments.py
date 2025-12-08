@@ -67,6 +67,8 @@ async def create_appointment(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """Create appointment endpoint"""
+
+    appointment_data.tenant_id = current_user.tenant_id
     appointment = await appointment_service.create_appointment(db, appointment_data)
     return AppointmentPublic.from_orm(appointment)
 
