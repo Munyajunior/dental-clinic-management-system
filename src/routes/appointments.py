@@ -139,14 +139,39 @@ async def update_appointment_status(
     current_user: Any = Depends(auth_service.get_current_user),
 ) -> Any:
     """Update appointment status endpoint"""
-    appointment = await appointment_service.update_status(
-        db, appointment_id, status_data.status, status_data.cancellation_reason
-    )
-    if not appointment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
+    try:
+        appointment = await appointment_service.update_status(
+            db, appointment_id, status_data.status, status_data.cancellation_reason
         )
-    return AppointmentPublic.from_orm(appointment)
+        if not appointment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
+            )
+
+        # Convert to public model without triggering lazy loads
+        appointment_public = AppointmentPublic.from_orm(appointment)
+
+        # Manually add patient and dentist names if needed
+        if hasattr(appointment, "patient") and appointment.patient:
+            appointment_public.patient_name = (
+                f"{appointment.patient.first_name} {appointment.patient.last_name}"
+            )
+
+        if hasattr(appointment, "dentist") and appointment.dentist:
+            appointment_public.dentist_name = (
+                f"{appointment.dentist.first_name} {appointment.dentist.last_name}"
+            )
+
+        return appointment_public
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in update_appointment_status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
 
 @router.get(
