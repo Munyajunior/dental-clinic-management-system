@@ -1,8 +1,8 @@
 """auto migration
 
-Revision ID: b59ee32519a8
+Revision ID: 3eb6e8e81c34
 Revises: 
-Create Date: 2025-11-27 23:51:51.909626
+Create Date: 2025-12-08 17:38:42.107450
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'b59ee32519a8'
+revision: str = '3eb6e8e81c34'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -119,6 +119,24 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email')
     )
+    op.create_table('audit_logs',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('tenant_id', sa.UUID(), nullable=False),
+    sa.Column('user_id', sa.UUID(), nullable=False),
+    sa.Column('action', sa.Enum('CREATED', 'UPDATED', 'DELETED', 'DISPENSED', 'RENEWED', 'ARCHIVED', 'CANCELLED', 'VIEWED', 'PRINTED', 'EXPORTED', name='auditaction'), nullable=False),
+    sa.Column('entity_type', sa.String(length=50), nullable=False),
+    sa.Column('entity_id', sa.UUID(), nullable=False),
+    sa.Column('details', sa.JSON(), nullable=True),
+    sa.Column('ip_address', sa.String(length=45), nullable=True),
+    sa.Column('user_agent', sa.Text(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('ix_audit_logs_created_at', 'audit_logs', ['created_at'], unique=False)
+    op.create_index('ix_audit_logs_tenant_entity', 'audit_logs', ['tenant_id', 'entity_type', 'entity_id'], unique=False)
+    op.create_index('ix_audit_logs_user_id', 'audit_logs', ['user_id'], unique=False)
     op.create_table('login_attempts',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
@@ -279,6 +297,7 @@ def upgrade() -> None:
     sa.Column('duration_minutes', sa.Integer(), nullable=True),
     sa.Column('appointment_type', sa.Enum('CONSULTATION', 'TREATMENT', 'FOLLOW_UP', 'EMERGENCY', 'HYGIENE', 'CHECKUP', name='appointmenttype'), nullable=False),
     sa.Column('status', sa.Enum('SCHEDULED', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED', name='appointmentstatus'), nullable=True),
+    sa.Column('is_urgent', sa.Boolean(), nullable=True),
     sa.Column('reason', sa.Text(), nullable=False),
     sa.Column('notes', sa.Text(), nullable=True),
     sa.Column('symptoms', sa.JSON(), nullable=True),
@@ -497,6 +516,11 @@ def upgrade() -> None:
     sa.Column('patient_id', sa.UUID(), nullable=False),
     sa.Column('dentist_id', sa.UUID(), nullable=False),
     sa.Column('treatment_id', sa.UUID(), nullable=True),
+    sa.Column('original_prescription_id', sa.UUID(), nullable=True),
+    sa.Column('renewal_number', sa.Integer(), nullable=True),
+    sa.Column('renewal_chain_id', sa.UUID(), nullable=True),
+    sa.Column('renewal_reason', sa.String(length=500), nullable=True),
+    sa.Column('renewal_notes', sa.Text(), nullable=True),
     sa.Column('medication_name', sa.String(length=100), nullable=False),
     sa.Column('dosage', sa.String(length=50), nullable=False),
     sa.Column('frequency', sa.String(length=50), nullable=False),
@@ -504,12 +528,16 @@ def upgrade() -> None:
     sa.Column('instructions', sa.Text(), nullable=True),
     sa.Column('quantity', sa.String(length=50), nullable=True),
     sa.Column('refills', sa.Integer(), nullable=True),
+    sa.Column('refills_remaining', sa.Integer(), nullable=True),
+    sa.Column('status', sa.Enum('ACTIVE', 'DISPENSED', 'EXPIRED', 'CANCELLED', 'ARCHIVED', 'RENEWED', name='prescriptionstatus'), nullable=False),
     sa.Column('is_dispensed', sa.Boolean(), nullable=True),
     sa.Column('dispensed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('archived_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['dentist_id'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['original_prescription_id'], ['prescriptions.id'], ),
     sa.ForeignKeyConstraint(['patient_id'], ['patients.id'], ),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ),
     sa.ForeignKeyConstraint(['treatment_id'], ['treatments.id'], ),
@@ -581,6 +609,10 @@ def downgrade() -> None:
     op.drop_table('password_reset_tokens')
     op.drop_table('newsletters')
     op.drop_table('login_attempts')
+    op.drop_index('ix_audit_logs_user_id', table_name='audit_logs')
+    op.drop_index('ix_audit_logs_tenant_entity', table_name='audit_logs')
+    op.drop_index('ix_audit_logs_created_at', table_name='audit_logs')
+    op.drop_table('audit_logs')
     op.drop_table('users')
     op.drop_table('services')
     op.drop_table('tenants')
