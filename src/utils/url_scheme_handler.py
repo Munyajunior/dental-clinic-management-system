@@ -1,4 +1,4 @@
-# src/utils/url_scheme_handler.py
+# frontend/utils/url_scheme_handler.py
 import sys
 import os
 import platform
@@ -34,13 +34,63 @@ class RegistrationResult(Enum):
 class URLSchemeHandler:
     """Enterprise-grade cross-platform URL scheme handler with silent admin privilege handling"""
 
-    SCHEME = "kwantabit-dental"
+    SCHEME = "kwantabit-kwantadent"
     APP_NAME = f"{AppConfig.APP_NAME}"
+    APP_VERSION = f"{AppConfig.APP_VERSION}"
     COMPANY_NAME = f"{AppConfig.ORGANIZATION}"
 
     def __init__(self):
         self.platform = self._detect_platform()
         self.assets_dir = self._get_assets_directory()
+        self._is_frozen = self._is_frozen_app()
+        self._app_path = self._get_application_path()
+
+    def _is_frozen_app(self) -> bool:
+        """Check if application is running as frozen executable (pyinstaller, etc.)"""
+        # PyInstaller, Py2exe, cx_Freeze, etc.
+        return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
+
+    def _get_application_path(self) -> Path:
+        """Get the correct application path for all environments"""
+        if self._is_frozen:
+            # Running as compiled executable
+            if platform.system() == "Windows":
+                # For Windows .exe files
+                return Path(sys.executable)
+            elif platform.system() == "Darwin":
+                # For macOS .app bundles
+                if sys.executable.endswith(".app"):
+                    return Path(sys.executable)
+                else:
+                    # Inside .app/Contents/MacOS/
+                    return Path(sys.executable).parent.parent.parent
+            else:
+                # Linux/other
+                return Path(sys.executable)
+        else:
+            # Running in development
+            return Path(sys.executable)
+
+    def _get_executable_command(self) -> str:
+        """Get the correct command to launch the application"""
+        app_path = self._get_application_path()
+
+        if self._is_frozen:
+            # Running as compiled executable
+            if platform.system() == "Windows":
+                return f'"{app_path}" "%1"'
+            elif platform.system() == "Darwin":
+                # macOS .app bundle
+                if str(app_path).endswith(".app"):
+                    return f'open "{app_path}" --args "%1"'
+                else:
+                    return f'"{app_path}" "%1"'
+            else:
+                # Linux/other
+                return f'"{app_path}" "%1"'
+        else:
+            # Development mode - use Python
+            return f'"{app_path}" "%1"'
 
     @staticmethod
     def _detect_platform() -> Platform:
@@ -144,7 +194,7 @@ class URLSchemeHandler:
                 / "Library"
                 / "Preferences"
                 / f"com.{self.COMPANY_NAME.lower()}.plist",
-                "/Applications/KwantaBit Dental.app/Contents/Info.plist",
+                "/Applications/KwantaBit KwantaDent.app/Contents/Info.plist",
             ]
 
             for plist_file in locations:
@@ -244,7 +294,9 @@ class URLSchemeHandler:
             # Create command key
             command_key = f"{self.SCHEME}\\shell\\open\\command"
             with winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, command_key) as key:
-                winreg.SetValue(key, "", winreg.REG_SZ, f'"{app_path}" "%1"')
+                # Use the correct executable command
+                command = self._get_executable_command()
+                winreg.SetValue(key, "", winreg.REG_SZ, command)
 
             logger.info("Windows protocol registered successfully")
             return RegistrationResult.SUCCESS, "Protocol registered successfully"
@@ -273,9 +325,13 @@ class URLSchemeHandler:
             )
             app_support_dir.mkdir(parents=True, exist_ok=True)
 
+            # Get the application path
+            app_path = str(self._get_application_path())
+
             # Create Info.plist with URL scheme
             plist_content = {
                 "CFBundleName": self.APP_NAME,
+                "CFBundleExecutable": os.path.basename(app_path),
                 "CFBundleURLTypes": [
                     {
                         "CFBundleURLName": self.APP_NAME,
@@ -292,18 +348,22 @@ class URLSchemeHandler:
 
             # Register with launch services
             try:
-                subprocess.run(
-                    [
-                        "defaults",
-                        "write",
-                        f"com.{self.COMPANY_NAME.lower()}.dental",
-                        "CFBundleURLTypes",
-                        "-array",
-                        f'{{ CFBundleURLName = "{self.APP_NAME}"; CFBundleURLSchemes = ( "{self.SCHEME}" ); }}',
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
+                if self._is_frozen and app_path.endswith(".app"):
+                    # For .app bundles, use a different approach
+                    self._register_macos_app_bundle(app_path)
+                else:
+                    subprocess.run(
+                        [
+                            "defaults",
+                            "write",
+                            f"com.{self.COMPANY_NAME.lower()}.kwantadent",
+                            "CFBundleURLTypes",
+                            "-array",
+                            f'{{ CFBundleURLName = "{self.APP_NAME}"; CFBundleURLSchemes = ( "{self.SCHEME}" ); }}',
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
             except subprocess.CalledProcessError as e:
                 logger.warning(f"Could not register with launch services: {e}")
 
@@ -314,6 +374,46 @@ class URLSchemeHandler:
             error_msg = f"Failed to register macOS protocol: {e}"
             logger.error(error_msg)
             return RegistrationResult.FAILED, error_msg
+
+    def _register_macos_app_bundle(self, app_path: str):
+        """Register URL scheme for macOS .app bundle"""
+        try:
+            # Create Info.plist inside .app bundle
+            info_plist = Path(app_path) / "Contents" / "Info.plist"
+            if info_plist.exists():
+                import plistlib
+
+                with open(info_plist, "rb") as f:
+                    existing_data = plistlib.load(f)
+
+                # Add URL scheme if not present
+                url_types = existing_data.get("CFBundleURLTypes", [])
+                if not any(
+                    self.SCHEME in ut.get("CFBundleURLSchemes", []) for ut in url_types
+                ):
+                    url_types.append(
+                        {
+                            "CFBundleURLName": self.APP_NAME,
+                            "CFBundleURLSchemes": [self.SCHEME],
+                        }
+                    )
+                    existing_data["CFBundleURLTypes"] = url_types
+
+                    with open(info_plist, "wb") as f:
+                        plistlib.dump(existing_data, f)
+
+                    # Update launch services
+                    subprocess.run(
+                        [
+                            "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+                            "-f",
+                            app_path,
+                        ],
+                        check=False,
+                        capture_output=True,
+                    )
+        except Exception as e:
+            logger.warning(f"Could not update .app bundle: {e}")
 
     def _register_protocol_linux(self) -> Tuple[RegistrationResult, str]:
         """Register protocol on Linux"""
@@ -328,19 +428,23 @@ class URLSchemeHandler:
             desktop_dir = Path.home() / ".local" / "share" / "applications"
             desktop_dir.mkdir(parents=True, exist_ok=True)
 
-            app_path = os.path.abspath(sys.executable)
+            # Get the application path
+            app_path = str(self._get_application_path())
             icon_path = self._get_icon_path("app_icon")
 
             desktop_file = desktop_dir / f"{self.SCHEME}.desktop"
 
+            # Check if we're running as AppImage
+            is_appimage = "AppRun" in app_path or app_path.endswith(".AppImage")
+
             desktop_content = f"""[Desktop Entry]
-Version=1.0
-Type=Application
-Name={self.APP_NAME}
-Exec={app_path} %u
-StartupNotify=false
-MimeType=x-scheme-handler/{self.SCHEME};
-"""
+    Version=1.0
+    Type=Application
+    Name={self.APP_NAME}
+    Exec={app_path} %u
+    StartupNotify=false
+    MimeType=x-scheme-handler/{self.SCHEME};
+    """
 
             # Add icon if available
             if icon_path.exists():
@@ -355,6 +459,19 @@ MimeType=x-scheme-handler/{self.SCHEME};
                     check=True,
                     capture_output=True,
                 )
+
+                # Also update mime database
+                if is_appimage:
+                    subprocess.run(
+                        [
+                            "xdg-mime",
+                            "default",
+                            f"{self.SCHEME}.desktop",
+                            f"x-scheme-handler/{self.SCHEME}",
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
             except subprocess.CalledProcessError as e:
                 logger.warning(f"Could not update desktop database: {e}")
 
@@ -521,7 +638,6 @@ Start-Process $psi
         try:
             import winreg
 
-            app_path = os.path.abspath(sys.executable)
             icon_path = self._get_icon_path("app_icon")
 
             # Create protocol key
@@ -538,7 +654,9 @@ Start-Process $psi
             # Create command key
             command_key = f"{self.SCHEME}\\shell\\open\\command"
             with winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, command_key) as key:
-                winreg.SetValue(key, "", winreg.REG_SZ, f'"{app_path}" "%1"')
+                # Use the correct executable command
+                command = self._get_executable_command()
+                winreg.SetValue(key, "", winreg.REG_SZ, command)
 
             logger.info("Windows protocol registered silently")
             return True, "Protocol registered successfully"
@@ -610,8 +728,8 @@ import winreg
 import platform
 from pathlib import Path
 
-SCHEME = "kwantabit-dental"
-APP_NAME = "Dental Clinic Management System"
+SCHEME = "kwantabit-kwantadent"
+APP_NAME = "KwantaDent Suite"
 
 def is_admin():
     """Check if running as admin on Windows"""
