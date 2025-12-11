@@ -1,0 +1,449 @@
+<!-- src/templates/email/appointment_cancellation.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appointment Cancellation - {{ clinic_name }}</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; 
+            line-height: 1.6; 
+            color: #1f2937; 
+            margin: 0;
+            padding: 0;
+            background-color: #f9fafb;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .header { 
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center; 
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+        }
+        .header .subtitle {
+            margin-top: 10px;
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        .content { 
+            padding: 40px 30px; 
+        }
+        .cancellation-details { 
+            background: linear-gradient(135deg, #fef2f2, #fee2e2);
+            padding: 25px; 
+            border-radius: 10px; 
+            margin: 25px 0; 
+            border-left: 4px solid #ef4444;
+        }
+        .cancellation-details h3 {
+            color: #991b1b;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+        .detail-item {
+            margin-bottom: 12px;
+            display: flex;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #374151;
+            min-width: 140px;
+        }
+        .detail-value {
+            color: #111827;
+            flex: 1;
+        }
+        .footer { 
+            text-align: center; 
+            padding: 30px; 
+            color: #6b7280; 
+            font-size: 14px;
+            background: #f8fafc;
+            border-top: 1px solid #e5e7eb;
+        }
+        .app-button {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white; 
+            padding: 14px 28px; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            display: inline-block;
+            font-weight: 600;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 20px 0;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        .app-button:hover {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.4);
+        }
+        .app-button.secondary {
+            background: linear-gradient(135deg, #10b981, #059669);
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+        }
+        .app-button.secondary:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+            box-shadow: 0 6px 8px -1px rgba(16, 185, 129, 0.4);
+        }
+        .app-button.outline {
+            background: white;
+            color: #3b82f6;
+            border: 2px solid #3b82f6;
+            box-shadow: none;
+        }
+        .app-button.outline:hover {
+            background: #eff6ff;
+            transform: translateY(-2px);
+        }
+        .info-box {
+            background: #f0f9ff;
+            border: 1px solid #93c5fd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .info-box h4 {
+            color: #1e40af;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .warning-box {
+            background: #fef3c7;
+            border: 1px solid #fbbf24;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .warning-box h4 {
+            color: #92400e;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .reschedule-options {
+            background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+            border: 1px solid #86efac;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 25px 0;
+        }
+        .reschedule-options h4 {
+            color: #166534;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        .quick-links {
+            display: flex;
+            gap: 15px;
+            margin: 25px 0;
+            flex-wrap: wrap;
+        }
+        .link-item {
+            flex: 1;
+            min-width: 150px;
+            text-align: center;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .logo img {
+            max-width: 180px;
+            height: auto;
+        }
+        .status-badge {
+            display: inline-block;
+            background: #ef4444;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .next-available {
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 25px 0;
+            text-align: center;
+        }
+        .next-available h4 {
+            color: #475569;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        .availability-slots {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+        .slot-button {
+            background: white;
+            border: 2px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 10px 20px;
+            color: #374151;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .slot-button:hover {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .confirmation-note {
+            font-style: italic;
+            color: #6b7280;
+            text-align: center;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .contact-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 25px 0;
+        }
+        .contact-option {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        .contact-option h5 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <!-- Replace with your clinic logo URL -->
+                <!-- <img src="https://your-clinic.com/logo.png" alt="{{ clinic_name }} Logo"> -->
+                <h2 style="color: white; margin: 0;">{{ clinic_name }}</h2>
+            </div>
+            <h1>❌ Appointment Cancelled</h1>
+            <p class="subtitle">Your appointment has been successfully cancelled</p>
+        </div>
+        
+        <div class="content">
+            <p>Dear <strong>{{ patient_name }}</strong>,</p>
+            
+            <p>We've processed your appointment cancellation request. We're sorry to see you won't be able to make it, but we understand that schedules can change.</p>
+            
+            <div class="cancellation-details">
+                <h3>📅 Cancelled Appointment</h3>
+                <div class="detail-item">
+                    <span class="detail-label">Original Date:</span>
+                    <span class="detail-value">{{ appointment_date }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Dentist:</span>
+                    <span class="detail-value">Dr. {{ dentist_name }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Appointment Type:</span>
+                    <span class="detail-value">{{ appointment_type }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Status:</span>
+                    <span class="detail-value">
+                        <strong style="color: #ef4444;">CANCELLED</strong>
+                        <span class="status-badge">CONFIRMED</span>
+                    </span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Cancellation Date:</span>
+                    <span class="detail-value">{{ cancellation_date }}</span>
+                </div>
+                {% if cancellation_reason %}
+                <div class="detail-item">
+                    <span class="detail-label">Reason:</span>
+                    <span class="detail-value">{{ cancellation_reason }}</span>
+                </div>
+                {% endif %}
+            </div>
+            
+            <div class="confirmation-note">
+                📋 <strong>Cancellation Reference:</strong> #{{ cancellation_id }}<br>
+                Please keep this reference number for your records.
+            </div>
+            
+            <!-- Reschedule Options -->
+            <div class="reschedule-options">
+                <h4>🔄 Would You Like to Reschedule?</h4>
+                <p>We'd love to see you at another time. Here are some convenient options:</p>
+                
+                <!-- Deep Link Button (Only shown if has_deep_link is true) -->
+                {% if has_deep_link and deep_link_url %}
+                <div style="text-align: center; margin: 20px 0;">
+                    <a href="{{ deep_link_url }}" class="app-button secondary">
+                        📱 Reschedule in {{ app_name }} App
+                    </a>
+                    <p style="font-size: 14px; color: #166534; margin-top: 10px;">
+                        One-click access to reschedule in our application
+                    </p>
+                </div>
+                
+                <div class="info-box">
+                    <h4>📱 Quick Reschedule Instructions</h4>
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Click the green button above to open {{ app_name }}</li>
+                        <li>Select "Reschedule Appointment" from the menu</li>
+                        <li>Choose a new date and time that works for you</li>
+                        <li>Confirm your new appointment</li>
+                        <li>Or use this link: <code style="background: #e5e7eb; padding: 4px 8px; border-radius: 4px; font-family: monospace;">{{ deep_link_url }}</code></li>
+                    </ol>
+                </div>
+                {% endif %}
+                
+                <div class="next-available">
+                    <h4>⏰ Next Available Slots</h4>
+                    <p>Here are some upcoming availability with Dr. {{ dentist_name }}:</p>
+                    <div class="availability-slots">
+                        {% if next_available_slots %}
+                            {% for slot in next_available_slots %}
+                            <a href="{{ reschedule_base_url }}?slot={{ slot.datetime }}" class="slot-button">
+                                {{ slot.date }}<br>
+                                <small>{{ slot.time }}</small>
+                            </a>
+                            {% endfor %}
+                        {% else %}
+                            <p style="color: #6b7280;">Please contact us for available time slots.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="warning-box">
+                <h4>⚠️ Important Cancellation Policy</h4>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li><strong>24-hour notice:</strong> We require at least 24 hours notice for cancellations</li>
+                    <li><strong>No-show policy:</strong> Repeated missed appointments may result in a fee</li>
+                    <li><strong>Insurance impact:</strong> Some insurance plans have cancellation limits</li>
+                    <li><strong>Emergency cases:</strong> For emergencies, please call us directly at <strong>{{ clinic_phone }}</strong></li>
+                </ul>
+                <p style="font-size: 14px; color: #92400e; margin-top: 15px;">
+                    <strong>Note:</strong> {{ cancellation_policy_note }}
+                </p>
+            </div>
+            
+            <!-- Quick Action Buttons -->
+            <div style="text-align: center; margin: 30px 0;">
+                <h4>📋 What Would You Like to Do Next?</h4>
+                <div class="quick-links">
+                    <div class="link-item">
+                        <a href="{{ reschedule_url }}" class="app-button secondary" style="display: block;">
+                            📅 Reschedule
+                        </a>
+                    </div>
+                    <div class="link-item">
+                        <a href="{{ new_appointment_url }}" class="app-button" style="display: block;">
+                            ➕ New Appointment
+                        </a>
+                    </div>
+                    <div class="link-item">
+                        <a href="{{ contact_url }}" class="app-button outline" style="display: block;">
+                            📞 Contact Us
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="contact-options">
+                <div class="contact-option">
+                    <h5>📧 Email</h5>
+                    <p><a href="mailto:{{ contact_email }}" style="color: #2563eb; text-decoration: none;">{{ contact_email }}</a></p>
+                    <small>Response within 24 hours</small>
+                </div>
+                <div class="contact-option">
+                    <h5>📱 Phone</h5>
+                    <p><a href="tel:{{ clinic_phone }}" style="color: #2563eb; text-decoration: none;">{{ clinic_phone }}</a></p>
+                    <small>Mon-Fri: 8am-6pm</small>
+                </div>
+                <div class="contact-option">
+                    <h5>💬 WhatsApp</h5>
+                    <p><a href="https://wa.me/{{ whatsapp_number }}" style="color: #2563eb; text-decoration: none;">Chat with us</a></p>
+                    <small>Quick responses</small>
+                </div>
+                <div class="contact-option">
+                    <h5>📍 Visit</h5>
+                    <p><a href="{{ directions_url }}" style="color: #2563eb; text-decoration: none;">Get Directions</a></p>
+                    <small>{{ clinic_address }}</small>
+                </div>
+            </div>
+            
+            <div class="info-box">
+                <h4>💡 Dental Health Reminder</h4>
+                <p>Even though your appointment is cancelled, remember:</p>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li>Continue your daily oral hygiene routine</li>
+                    <li>Schedule regular cleanings every 6 months</li>
+                    <li>Contact us immediately for any dental emergencies</li>
+                    <li>Consider telehealth consultation for minor concerns</li>
+                </ul>
+            </div>
+            
+            <p style="text-align: center; margin-top: 30px; font-style: italic; color: #6b7280;">
+                "We're committed to your dental health journey. We hope to see you soon!"
+            </p>
+            
+            <p style="margin-top: 30px;">
+                Sincerely,<br>
+                <strong>The Dental Team at {{ clinic_name }}</strong><br>
+                <span style="font-size: 14px; color: #6b7280;">Your partner in dental wellness</span>
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p style="margin: 0 0 15px 0;">
+                <strong>{{ clinic_name }}</strong> | Professional Dental Care
+            </p>
+            <p style="font-size: 12px; color: #9ca3af; margin: 10px 0;">
+                This cancellation confirmation was sent to {{ patient_email }}.
+            </p>
+            <p style="font-size: 12px; color: #9ca3af; margin: 10px 0;">
+                <a href="{{ preferences_url }}" style="color: #6b7280; text-decoration: none;">Email Preferences</a> | 
+                <a href="{{ privacy_url }}" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> | 
+                <a href="{{ terms_url }}" style="color: #6b7280; text-decoration: none;">Terms of Service</a>
+            </p>
+            <p style="font-size: 11px; color: #9ca3af; margin-top: 15px;">
+                &copy; {{ current_year }} {{ clinic_name }}. All rights reserved.<br>
+                This is an automated message. For assistance, contact us at {{ contact_email }}.<br>
+                Cancellation ID: #{{ cancellation_id }} | Patient ID: {{ patient_id }}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

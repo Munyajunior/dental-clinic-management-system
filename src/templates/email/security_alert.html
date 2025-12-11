@@ -74,9 +74,67 @@
             font-size: 48px;
             margin-bottom: 15px;
         }
+        .button {
+            display: inline-block;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #059669, #047857);
+            color: white !important;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+            margin: 10px 5px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(5, 150, 105, 0.3);
+        }
+        .button:hover {
+            background: linear-gradient(135deg, #047857, #065f46);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(5, 150, 105, 0.4);
+        }
+        .button-secondary {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        .button-secondary:hover {
+            background: linear-gradient(135deg, #1d4ed8, #1e40af);
+            box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.4);
+        }
+        .code {
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        .device-info {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .tip-box {
+            background: #f0f9ff;
+            border-left: 4px solid #0ea5e9;
+            padding: 16px;
+            margin: 20px 0;
+            border-radius: 6px;
+        }
         @media (max-width: 600px) {
             .content {
                 padding: 25px;
+            }
+            .button {
+                display: block;
+                width: 100%;
+                margin: 10px 0;
             }
         }
     </style>
@@ -85,78 +143,207 @@
     <div class="container">
         <div class="header">
             <h1 style="margin: 0; font-size: 24px; font-weight: 700;">Password Successfully Updated</h1>
-            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Security confirmation</p>
+            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Security confirmation • {{ clinic_name }}</p>
         </div>
         
         <div class="content">
             <p>Dear <strong>{{ user_name }}</strong>,</p>
             
-            <p>This is a security confirmation that your password for the Dental Clinic Management System has been successfully updated.</p>
+            <p>This is a security confirmation that your password for the <strong>{{ app_name }}</strong> ({{ clinic_name }}) has been successfully updated.</p>
             
             <div class="confirmation-box">
                 <div class="checkmark">✅</div>
                 <h3 style="margin: 0 0 10px 0; color: #065f46;">Password Updated Successfully</h3>
                 <p style="margin: 0; color: #065f46; font-weight: 600;">Your account security has been enhanced</p>
+                
+                <!-- Primary Action Button -->
+                <div style="margin-top: 20px;">
+                    <a href="{{ deep_link_url }}" class="button">
+                        🔐 Launch {{ app_name }}
+                    </a>
+                </div>
+                
+                <!-- Alternative text link -->
+                <p style="margin-top: 15px; font-size: 14px; color: #4b5563;">
+                    Or click: <a href="{{ deep_link_url }}" style="color: #059669; text-decoration: underline;">{{ deep_link_url }}</a>
+                </p>
             </div>
             
             <div class="info-box">
                 <h4 style="margin: 0 0 10px 0; color: #1e40af;">📋 Action Details</h4>
-                <p style="margin: 0;"><strong>Action:</strong> Password Reset & Update</p>
-                <p style="margin: 8px 0 0 0;"><strong>Status:</strong> Completed Successfully</p>
-                <p style="margin: 8px 0 0 0;"><strong>Time:</strong> {{ timestamp }}</p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                    <div>
+                        <p style="margin: 0; font-size: 14px; color: #6b7280;">Action:</p>
+                        <p style="margin: 0; font-weight: 600;">Password Reset & Update</p>
+                    </div>
+                    <div>
+                        <p style="margin: 0; font-size: 14px; color: #6b7280;">Status:</p>
+                        <p style="margin: 0; font-weight: 600; color: #059669;">Completed Successfully</p>
+                    </div>
+                    <div>
+                        <p style="margin: 0; font-size: 14px; color: #6b7280;">Time:</p>
+                        <p style="margin: 0; font-weight: 600;">{{ reset_time }}</p>
+                    </div>
+                </div>
+                
+                {% if device_info %}
+                <div class="device-info" style="margin-top: 15px;">
+                    <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;">Device Information:</p>
+                    <p style="margin: 0; font-weight: 600;">
+                        {{ device_info.type if device_info.type else 'Unknown device' }} • 
+                        {{ device_info.os if device_info.os else 'Unknown OS' }}
+                    </p>
+                </div>
+                {% endif %}
+                
+                {% if ip_address %}
+                <div style="margin-top: 10px;">
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;">IP Address:</p>
+                    <p style="margin: 0; font-weight: 600;">{{ ip_address }}</p>
+                </div>
+                {% endif %}
             </div>
 
-            <h3 style="color: #065f46; border-bottom: 2px solid #10b981; padding-bottom: 8px;">What to Do Next</h3>
+            <!-- URL Scheme Information for Advanced Users -->
+            <div class="tip-box">
+                <h4 style="margin: 0 0 10px 0; color: #0ea5e9;">💡 Using {{ app_name }} with Custom URL Scheme</h4>
+                <p style="margin: 0 0 10px 0;">
+                    You can also open the application using our custom URL scheme:
+                </p>
+                <div class="code">{{ scheme_name }}://login</div>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">
+                    Copy and paste this URL into any browser to launch the application directly.
+                </p>
+            </div>
+
+            <!-- Next Steps Section -->
+            <h3 style="color: #065f46; border-bottom: 2px solid #10b981; padding-bottom: 8px; margin-top: 30px;">
+                🔒 What to Do Next
+            </h3>
             
+            {% if next_steps %}
+                {% for step in next_steps %}
+                <div class="step">
+                    {{ step|safe }}
+                </div>
+                {% endfor %}
+            {% else %}
             <div class="step">
-                <h4 style="margin: 0 0 10px 0; color: #065f46;">1. Verify Access</h4>
-                <p style="margin: 0;">Log into the application with your new password to confirm everything is working correctly.</p>
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">1. Verify Your New Password</h4>
+                <p style="margin: 0;">
+                    <a href="{{ deep_link_url }}" style="color: #059669; font-weight: 600;">Click here to launch {{ app_name }}</a> and log in with your new password to confirm everything is working correctly.
+                </p>
             </div>
             
             <div class="step">
-                <h4 style="margin: 0 0 10px 0; color: #065f46;">2. Check Recent Activity</h4>
-                <p style="margin: 0;">Review your recent login activity in the application settings to ensure all access is legitimate.</p>
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">2. Review Security Settings</h4>
+                <p style="margin: 0;">
+                    Once logged in, navigate to <strong>Settings → Security</strong> to review and enhance your account security settings.
+                </p>
             </div>
             
             <div class="step">
                 <h4 style="margin: 0 0 10px 0; color: #065f46;">3. Update Other Devices</h4>
-                <p style="margin: 0;">If you use the application on multiple devices, update your password on all of them.</p>
+                <p style="margin: 0;">
+                    If you use {{ app_name }} on multiple devices, update your password on all of them for continued access.
+                </p>
             </div>
+            {% endif %}
 
+            <!-- Security Tips -->
+            {% if security_tips %}
+            <div style="margin: 25px 0;">
+                <h4 style="color: #065f46; margin-bottom: 15px;">🛡️ Security Tips</h4>
+                <ul style="margin: 0; padding-left: 20px;">
+                    {% for tip in security_tips %}
+                    <li style="margin-bottom: 8px;">{{ tip }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
             <div class="security-note">
-                <strong>🔒 Security Alert:</strong> If you did NOT initiate this password change, please contact our security team immediately. Your account may have been compromised.
+                <strong>⚠️ Security Alert:</strong> If you did <strong>NOT</strong> initiate this password change, please contact our security team immediately at 
+                <a href="mailto:security@{{ clinic_name|lower|replace(' ', '') }}.com" style="color: #d97706; font-weight: 600;">security@{{ clinic_name|lower|replace(' ', '') }}.com</a>. 
+                Your account may have been compromised.
             </div>
             
-            <p><strong>Enhanced Security Features Available</strong></p>
-            <ul>
-                <li><strong>Two-Factor Authentication:</strong> Add an extra layer of security to your account</li>
-                <li><strong>Login Notifications:</strong> Get alerts for new device logins</li>
-                <li><strong>Session Management:</strong> View and manage active sessions</li>
-                <li><strong>Security Audit Log:</strong> Monitor all account activity</li>
-            </ul>
+            <!-- Enhanced Security Features -->
+            <div style="margin: 25px 0;">
+                <h4 style="color: #065f46; margin-bottom: 15px;">🚀 Enhanced Security Features Available</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <strong>🔐 Two-Factor Authentication</strong>
+                        <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Add an extra layer of security to your account</p>
+                    </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <strong>📱 Login Notifications</strong>
+                        <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Get alerts for new device logins</p>
+                    </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <strong>📊 Session Management</strong>
+                        <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">View and manage active sessions</p>
+                    </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <strong>📈 Security Audit Log</strong>
+                        <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Monitor all account activity</p>
+                    </div>
+                </div>
+            </div>
             
-            <p><strong>Need Assistance?</strong></p>
-            <p>If you have any questions or security concerns, our support team is here to help:</p>
-            <ul>
-                <li>📧 <strong>General Support:</strong> <a href="mailto:{{ support_email }}">{{ support_email }}</a></li>
-                <li>🔒 <strong>Security Team:</strong> <a href="mailto:security@kwantabit.com">security@kwantabit.com</a></li>
-                <li>📞 <strong>Emergency:</strong> {{ whatsapp_support }} (WhatsApp)</li>
-            </ul>
+            <!-- Support Information -->
+            <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                <h4 style="margin: 0 0 15px 0; color: #0ea5e9;">🆘 Need Assistance?</h4>
+                <p style="margin: 0 0 15px 0;">If you have any questions or security concerns, our support team is here to help:</p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div>
+                        <p style="margin: 0; font-size: 14px; color: #6b7280;">General Support:</p>
+                        <a href="mailto:{{ support_email }}" style="color: #3b82f6; font-weight: 600; text-decoration: none;">📧 {{ support_email }}</a>
+                    </div>
+                    <div>
+                        <p style="margin: 0; font-size: 14px; color: #6b7280;">Security Team:</p>
+                        <a href="mailto:security@kwantabit.com" style="color: #dc2626; font-weight: 600; text-decoration: none;">🔒 security@kwantabit.com</a>
+                    </div>
+                    <div>
+                        <p style="margin: 0; font-size: 14px; color: #6b7280;">Emergency:</p>
+                        <a href="https://wa.me/{{ whatsapp_support|replace(' ', '')|replace('+', '') }}" style="color: #059669; font-weight: 600; text-decoration: none;">📞 {{ whatsapp_support }}</a>
+                    </div>
+                </div>
+                
+                <!-- Quick Launch Button -->
+                <div style="text-align: center; margin-top: 20px;">
+                    <a href="{{ deep_link_url }}" class="button button-secondary">
+                        🚀 Launch Application Now
+                    </a>
+                </div>
+            </div>
             
-            <p>Thank you for helping us keep your account secure,<br>
-            <strong>The KwantaBit Technologies Security Team</strong></p>
+            <!-- Manual URL Instructions -->
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px dashed #d1d5db;">
+                <p style="margin: 0; font-size: 14px; color: #6b7280; text-align: center;">
+                    <strong>Manual Launch:</strong> If the buttons above don't work, copy this URL and paste it into your browser:<br>
+                    <span class="code" style="margin-top: 10px; display: block; text-align: center; font-size: 13px;">{{ deep_link_url }}</span>
+                </p>
+            </div>
+            
+            <p style="text-align: center; font-size: 16px; margin-top: 30px;">
+                Thank you for helping us keep your account secure,<br>
+                <strong style="color: #065f46;">The {{ clinic_name }} Security Team</strong>
+            </p>
         </div>
         
         <div class="footer">
             <p style="margin: 0 0 10px 0;">
-                <strong>KwantaBit Technologies Inc.</strong><br>
-                Protecting Your Digital Practice
+                <strong>{{ app_name }}</strong><br>
+                Powered by KwantaBit Technologies
             </p>
             <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-                © 2025 KwantaBit Technologies. All rights reserved.<br>
+                © {{ current_year if current_year else '2025' }} KwantaBit Technologies. All rights reserved.<br>
                 This is an automated security notification. Please do not reply to this email.<br>
                 <a href="https://kwantabit.com/security" style="color: #6b7280;">Security Center</a> • 
-                <a href="https://kwantabit.com/privacy" style="color: #6b7280;">Privacy Policy</a>
+                <a href="https://kwantabit.com/privacy" style="color: #6b7280;">Privacy Policy</a> • 
+                <a href="https://kwantabit.com/terms" style="color: #6b7280;">Terms of Service</a>
             </p>
         </div>
     </div>

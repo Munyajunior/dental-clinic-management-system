@@ -6,19 +6,132 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome to Our Dental Clinic</title>
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #10b981; color: white; padding: 20px; text-align: center; }
-        .content { background: #f9fafb; padding: 30px; }
-        .welcome-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
-        .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
-        .button { background: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; }
+        body { 
+            font-family: Arial, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            margin: 0;
+            padding: 0;
+            background-color: #f8fafc;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        .header { 
+            background: linear-gradient(135deg, #10b981, #059669); 
+            color: white; 
+            padding: 30px 20px; 
+            text-align: center;
+            border-radius: 10px 10px 0 0;
+        }
+        .content { 
+            background: white; 
+            padding: 40px 30px;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .welcome-box { 
+            background: #f0fdf4; 
+            padding: 25px; 
+            border-radius: 8px; 
+            margin: 25px 0;
+            border-left: 4px solid #10b981;
+        }
+        .footer { 
+            text-align: center; 
+            padding: 30px 20px; 
+            color: #6b7280; 
+            font-size: 14px;
+            margin-top: 30px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .button { 
+            background: linear-gradient(135deg, #10b981, #059669); 
+            color: white; 
+            padding: 14px 32px; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            display: inline-block;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+        }
+        .button:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(16, 185, 129, 0.4);
+        }
+        .deep-link-section {
+            background: #f8fafc;
+            border: 2px solid #d1fae5;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .instructions {
+            background: #f0f9ff;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .password-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        h3 {
+            color: #047857;
+            margin-top: 0;
+        }
+        .security-note {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 15px 0;
+            font-size: 13px;
+            color: #92400e;
+        }
+        .app-info {
+            background: #e0e7ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            font-size: 13px;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 10px;
+            }
+            .content {
+                padding: 25px 20px;
+            }
+            .button {
+                display: block;
+                text-align: center;
+                margin: 20px auto;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Welcome to {{ clinic_name }}</h1>
+            <h1>Welcome to {{ clinic_name }} 🦷</h1>
+            <p>Your journey to a healthier smile begins here</p>
         </div>
         
         <div class="content">
@@ -26,43 +139,142 @@
             
             <p>Welcome to our dental family! We're thrilled to have you as a new patient and look forward to helping you achieve and maintain excellent oral health.</p>
             
+            {% if has_deep_link %}
+            <div class="deep-link-section">
+                <h3>🚀 Quick Access to Your Patient Portal</h3>
+                <p>Click the button below to access your patient portal directly in our application:</p>
+                
+                <div style="text-align: center; margin: 25px 0;">
+                    <a href="{{ deep_link_url }}" class="button">
+                        🦷 Open Dental Clinic App
+                    </a>
+                </div>
+                
+                <p style="font-size: 14px; color: #6b7280; text-align: center;">
+                    <strong>One-click access:</strong> This will launch the {{ app_name }} application
+                </p>
+            </div>
+            {% endif %}
+            
             <div class="welcome-box">
-                <h3>Getting Started</h3>
+                <h3>📋 Getting Started</h3>
                 <p>Your patient account has been created successfully. Here's what you can do:</p>
                 <ul>
-                    <li>Schedule appointments online</li>
-                    <li>View your treatment history</li>
-                    <li>Access your dental records</li>
-                    <li>Receive appointment reminders</li>
+                    <li><strong>📅 Schedule appointments</strong> online at your convenience</li>
+                    <li><strong>📊 View your treatment history</strong> and dental records</li>
+                    <li><strong>🔔 Receive appointment reminders</strong> via email or SMS</li>
+                    <li><strong>💳 Access billing information</strong> and payment history</li>
+                    <li><strong>📋 Fill out medical forms</strong> before your visit</li>
                 </ul>
                 
                 {% if has_password %}
-                <p><strong>Temporary Password:</strong> {{ temporary_password }}</p>
-                <p style="color: #ef4444; font-size: 14px;">Please change your password after first login for security.</p>
+                <div class="password-box">
+                    <p><strong>🔑 Your Temporary Login Credentials:</strong></p>
+                    <p style="margin: 10px 0; padding: 10px; background: white; border-radius: 6px; font-family: monospace;">
+                        <strong>Email:</strong> {{ patient_email if patient_email else "Your registered email" }}<br>
+                        <strong>Password:</strong> {{ temporary_password }}
+                    </p>
+                    
+                    <div class="security-note">
+                        <p>⚠️ <strong>Security Notice:</strong> Please change your password after first login for security.</p>
+                    </div>
+                </div>
                 {% endif %}
             </div>
             
-            <p><strong>Our Services Include:</strong></p>
+            {% if has_deep_link %}
+            <div class="instructions">
+                <h4>📱 How to Use Your Patient Portal</h4>
+                <p><strong>Option 1: One-Click Access</strong></p>
+                <ol>
+                    <li>Click the "Open Dental Clinic App" button above</li>
+                    <li>Allow "{{ app_name }}" to open if prompted</li>
+                    <li>Log in with your credentials</li>
+                    <li>Start managing your dental care</li>
+                </ol>
+                
+                <p><strong>Option 2: Manual Access</strong></p>
+                <ol>
+                    <li>Copy this link: <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">{{ deep_link_url }}</code></li>
+                    <li>Paste it into your browser's address bar</li>
+                    <li>Press Enter to launch the application</li>
+                </ol>
+                
+                <p><strong>Option 3: Web Access</strong></p>
+                <p>Visit our website or contact us at <a href="mailto:{{ contact_email }}">{{ contact_email }}</a> for web portal access.</p>
+            </div>
+            {% endif %}
+            
+            <div class="app-info">
+                <h4>💡 About Our Application</h4>
+                <p>The {{ app_name }} application provides:</p>
+                <ul style="font-size: 13px;">
+                    <li>Secure, encrypted access to your health information</li>
+                    <li>Direct messaging with our dental team</li>
+                    <li>Photo upload for dental concerns</li>
+                    <li>Treatment plan explanations and consent forms</li>
+                    <li>Prescription access and refill requests</li>
+                </ul>
+            </div>
+            
+            <h3>🦷 Our Comprehensive Services</h3>
             <ul>
-                <li>General Dentistry & Check-ups</li>
-                <li>Teeth Cleaning & Whitening</li>
-                <li>Fillings & Restorations</li>
-                <li>Crowns & Bridges</li>
-                <li>Root Canal Treatment</li>
-                <li>Dental Implants</li>
-                <li>Orthodontics</li>
+                <li><strong>General Dentistry:</strong> Regular check-ups and cleanings</li>
+                <li><strong>Cosmetic Dentistry:</strong> Teeth whitening and veneers</li>
+                <li><strong>Restorative Dentistry:</strong> Fillings, crowns, and bridges</li>
+                <li><strong>Endodontics:</strong> Root canal treatments</li>
+                <li><strong>Periodontics:</strong> Gum disease treatment</li>
+                <li><strong>Orthodontics:</strong> Braces and aligners</li>
+                <li><strong>Oral Surgery:</strong> Extractions and implants</li>
+                <li><strong>Pediatric Dentistry:</strong> Specialized care for children</li>
             </ul>
             
-            <p>To schedule your first appointment or if you have any questions, please contact us at {{ contact_email }}.</p>
+            <h3>📍 Contact Information</h3>
+            <p>We're here to help you with all your dental needs:</p>
+            <ul>
+                <li><strong>📧 Email:</strong> <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></li>
+                <li><strong>📞 Phone:</strong> {{ clinic_phone if clinic_phone else "Contact us for phone number" }}</li>
+                <li><strong>📍 Address:</strong> {{ clinic_address if clinic_address else "Check our website for location" }}</li>
+                <li><strong>🕒 Hours:</strong> {{ clinic_hours if clinic_hours else "Monday-Friday: 8AM-6PM" }}</li>
+            </ul>
             
-            <p>We're committed to providing you with the highest quality dental care in a comfortable and friendly environment.</p>
+            <p style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 25px 0;">
+                <strong>🌟 Your First Visit:</strong><br>
+                Please arrive 15 minutes early for your first appointment to complete any remaining paperwork. 
+                Don't forget to bring your insurance information and photo ID.
+            </p>
             
-            <p>Welcome aboard!<br>The Team at {{ clinic_name }}</p>
+            <p>We're committed to providing you with the highest quality dental care in a comfortable, friendly, and modern environment.</p>
+            
+            <p style="font-size: 18px; color: #047857; margin-top: 30px;">
+                Welcome to our dental family!<br>
+                <strong>The Team at {{ clinic_name }}</strong>
+            </p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                {% if has_deep_link %}
+                <a href="{{ deep_link_url }}" class="button">
+                    🚀 Launch Patient Portal Now
+                </a>
+                {% endif %}
+            </div>
         </div>
         
         <div class="footer">
-            <p>&copy; 2025 {{ clinic_name }}. All rights reserved.</p>
-            <p>This is an automated message, please do not reply to this email.</p>
+            <p><strong>{{ clinic_name }}</strong></p>
+            <p>Professional Dental Care & Family Dentistry</p>
+            <p style="font-size: 12px; color: #9ca3af; margin-top: 15px;">
+                This email was sent to {{ patient_email if patient_email else "you" }} because you registered as a patient at {{ clinic_name }}.
+            </p>
+            <p style="font-size: 12px; color: #9ca3af;">
+                This is an automated message. Please do not reply to this email.<br>
+                For assistance, contact us at <a href="mailto:{{ contact_email }}" style="color: #10b981;">{{ contact_email }}</a>
+            </p>
+            <p style="font-size: 11px; color: #9ca3af; margin-top: 20px;">
+                &copy; {{ current_year if current_year else 2025 }} {{ clinic_name }}. All rights reserved.<br>
+                <a href="#" style="color: #9ca3af;">Privacy Policy</a> | 
+                <a href="#" style="color: #9ca3af;">Terms of Service</a>
+            </p>
         </div>
     </div>
 </body>

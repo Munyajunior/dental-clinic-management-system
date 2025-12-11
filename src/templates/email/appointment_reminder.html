@@ -12,6 +12,48 @@
         .content { background: #f9fafb; padding: 30px; }
         .reminder { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b; }
         .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            padding: 14px 28px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 20px 0;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px -1px rgba(245, 158, 11, 0.3);
+        }
+        .cta-button:hover {
+            background: linear-gradient(135deg, #d97706, #b45309);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(245, 158, 11, 0.4);
+        }
+        .instructions {
+            background: #fef3c7;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #f59e0b;
+            font-size: 14px;
+        }
+        .fallback-link {
+            color: #6b7280;
+            font-size: 12px;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+        .app-info {
+            background: #e5e7eb;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -26,20 +68,67 @@
             <p>This is a friendly reminder about your upcoming dental appointment.</p>
             
             <div class="reminder">
-                <h3>Your Appointment</h3>
+                <h3>📅 Your Appointment Details</h3>
                 <p><strong>When:</strong> {{ appointment_date }}</p>
                 <p><strong>With:</strong> Dr. {{ dentist_name }}</p>
                 <p><strong>Days until appointment:</strong> {{ days_until }} day(s)</p>
             </div>
             
-            <p><strong>Please remember to:</strong></p>
+            {% if has_deep_link %}
+            <div style="text-align: center; margin: 25px 0;">
+                <a href="{{ deep_link_url }}" class="cta-button">
+                    🔔 Open in {{ app_name }}
+                </a>
+                <p style="font-size: 12px; color: #6b7280; margin-top: 8px;">
+                    One-click access to your appointment details
+                </p>
+            </div>
+            
+            <div class="instructions">
+                <p><strong>📱 How to use this link:</strong></p>
+                <ol style="margin: 10px 0; padding-left: 20px;">
+                    <li>Click the button above</li>
+                    <li>Allow "{{ app_name }}" to open if prompted</li>
+                    <li>View your appointment details in the application</li>
+                    <li>Confirm, reschedule, or contact us directly from the app</li>
+                </ol>
+            </div>
+            
+            <p class="fallback-link">
+                <strong>Alternative:</strong> If the button doesn't work, copy and paste this link into your browser:<br>
+                <code>{{ deep_link_url }}</code>
+            </p>
+            {% endif %}
+            
+            <div class="app-info">
+                <p><strong>💡 About {{ app_name }}:</strong></p>
+                <p>This is our dedicated dental clinic management application. You can:</p>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li>View all your upcoming appointments</li>
+                    <li>Access your dental records and treatment history</li>
+                    <li>Receive real-time notifications</li>
+                    <li>Contact your dentist directly</li>
+                </ul>
+            </div>
+            
+            <p><strong>📋 Please remember to:</strong></p>
             <ul>
                 <li>Arrive 15 minutes early for paperwork</li>
                 <li>Bring your insurance information</li>
                 <li>Update us on any changes to your medical history</li>
+                <li>Bring a list of current medications if applicable</li>
             </ul>
             
-            <p>If you need to reschedule or have any questions, please contact us at {{ contact_email }}.</p>
+            <p><strong>📍 Location:</strong> {{ clinic_name }}</p>
+            <p><strong>📞 Contact:</strong> {{ contact_email }}</p>
+            
+            {% if has_deep_link %}
+            <p style="background: #fef3c7; padding: 10px; border-radius: 6px;">
+                <strong>Tip:</strong> You can use the same link to access your appointment anytime before your visit.
+            </p>
+            {% endif %}
+            
+            <p>If you need to reschedule or have any questions, please don't hesitate to contact us.</p>
             
             <p>We look forward to helping you maintain your dental health!</p>
             
@@ -47,8 +136,13 @@
         </div>
         
         <div class="footer">
-            <p>&copy; 2025 {{ clinic_name }}. All rights reserved.</p>
+            <p>&copy; {{ current_year }} {{ clinic_name }}. All rights reserved.</p>
             <p>This is an automated reminder, please do not reply to this email.</p>
+            {% if has_deep_link %}
+            <p style="font-size: 12px; color: #9ca3af; margin-top: 10px;">
+                <strong>App Link:</strong> {{ scheme_name }}://open-appointment
+            </p>
+            {% endif %}
         </div>
     </div>
 </body>

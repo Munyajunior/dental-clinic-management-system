@@ -4,53 +4,344 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Appointment Confirmation</title>
+    <title>Appointment Confirmation - {{ clinic_name }}</title>
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #2563eb; color: white; padding: 20px; text-align: center; }
-        .content { background: #f9fafb; padding: 30px; }
-        .appointment-details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
-        .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
-        .button { background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; 
+            line-height: 1.6; 
+            color: #1f2937; 
+            margin: 0;
+            padding: 0;
+            background-color: #f9fafb;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .header { 
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center; 
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+        }
+        .header .subtitle {
+            margin-top: 10px;
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        .content { 
+            padding: 40px 30px; 
+        }
+        .appointment-details { 
+            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+            padding: 25px; 
+            border-radius: 10px; 
+            margin: 25px 0; 
+            border-left: 4px solid #2563eb;
+        }
+        .appointment-details h3 {
+            color: #1e40af;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+        .detail-item {
+            margin-bottom: 12px;
+            display: flex;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #374151;
+            min-width: 140px;
+        }
+        .detail-value {
+            color: #111827;
+            flex: 1;
+        }
+        .footer { 
+            text-align: center; 
+            padding: 30px; 
+            color: #6b7280; 
+            font-size: 14px;
+            background: #f8fafc;
+            border-top: 1px solid #e5e7eb;
+        }
+        .app-button {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white; 
+            padding: 14px 28px; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            display: inline-block;
+            font-weight: 600;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 20px 0;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+        }
+        .app-button:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(16, 185, 129, 0.4);
+        }
+        .app-button.secondary {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        .app-button.secondary:hover {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.4);
+        }
+        .instructions {
+            background: #fef3c7;
+            border: 1px solid #fbbf24;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+            font-size: 14px;
+        }
+        .instructions h4 {
+            color: #92400e;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .instructions ol, .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        .reminders {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .reminders h4 {
+            color: #991b1b;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .contact-info {
+            background: #f0f9ff;
+            border: 1px solid #93c5fd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .contact-info h4 {
+            color: #1e40af;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .quick-links {
+            display: flex;
+            gap: 15px;
+            margin: 25px 0;
+            flex-wrap: wrap;
+        }
+        .link-item {
+            flex: 1;
+            min-width: 150px;
+            text-align: center;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .logo img {
+            max-width: 180px;
+            height: auto;
+        }
+        .badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Appointment Confirmed</h1>
+            <div class="logo">
+                <!-- Replace with your clinic logo URL -->
+                <!-- <img src="https://your-clinic.com/logo.png" alt="{{ clinic_name }} Logo"> -->
+                <h2>{{ clinic_name }}</h2>
+            </div>
+            <h1>✅ Appointment Confirmed</h1>
+            <p class="subtitle">Your dental appointment has been scheduled successfully</p>
         </div>
         
         <div class="content">
             <p>Dear <strong>{{ patient_name }}</strong>,</p>
             
-            <p>Your dental appointment has been confirmed. Here are your appointment details:</p>
+            <p>Thank you for scheduling your appointment with us. We've confirmed your visit and look forward to providing you with excellent dental care.</p>
             
             <div class="appointment-details">
-                <h3>Appointment Details</h3>
-                <p><strong>Date & Time:</strong> {{ appointment_date }}</p>
-                <p><strong>Dentist:</strong> Dr. {{ dentist_name }}</p>
-                <p><strong>Appointment Type:</strong> {{ appointment_type }}</p>
-                <p><strong>Location:</strong> {{ location }}</p>
+                <h3>📅 Appointment Details</h3>
+                <div class="detail-item">
+                    <span class="detail-label">Date & Time:</span>
+                    <span class="detail-value">{{ appointment_date }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Dentist:</span>
+                    <span class="detail-value">Dr. {{ dentist_name }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Appointment Type:</span>
+                    <span class="detail-value">{{ appointment_type }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Location:</span>
+                    <span class="detail-value">{{ location }}</span>
+                </div>
+                {% if appointment_id %}
+                <div class="detail-item">
+                    <span class="detail-label">Appointment ID:</span>
+                    <span class="detail-value">{{ appointment_id }}</span>
+                </div>
+                {% endif %}
             </div>
             
-            <p><strong>Important Reminders:</strong></p>
-            <ul>
-                <li>Please arrive 15 minutes before your scheduled appointment time</li>
-                <li>Bring your insurance card and ID</li>
-                <li>Let us know if you need to reschedule at least 24 hours in advance</li>
-            </ul>
+            <!-- Deep Link Button (Only shown if has_deep_link is true) -->
+            {% if has_deep_link and deep_link_url %}
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{{ deep_link_url }}" class="app-button">
+                    📱 Open in {{ app_name }} App
+                    <span class="badge">ONE-CLICK</span>
+                </a>
+                <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
+                    Click to open your appointment directly in our application
+                </p>
+            </div>
             
-            <p>If you have any questions or need to reschedule, please contact us at {{ contact_email }} or call our office.</p>
+            <div class="instructions">
+                <h4>📱 How to Access Your Appointment</h4>
+                <ol>
+                    <li><strong>One-click access:</strong> Click the green button above to open in {{ app_name }}</li>
+                    <li><strong>If prompted:</strong> Allow "{{ app_name }}" to open (first time only)</li>
+                    <li><strong>View details:</strong> See your appointment details and add to calendar</li>
+                    <li><strong>Need help?</strong> Use link: <code style="background: #e5e7eb; padding: 4px 8px; border-radius: 4px; font-family: monospace;">{{ deep_link_url }}</code></li>
+                </ol>
+            </div>
+            {% else %}
+            <div class="instructions">
+                <h4>📱 Access Your Appointment</h4>
+                <p>Download our mobile app to manage your appointments:</p>
+                <div class="quick-links">
+                    <div class="link-item">
+                        <a href="https://apps.apple.com/app/idYOUR_APP_ID" class="app-button secondary" style="display: block; text-align: center;">
+                            🍏 App Store
+                        </a>
+                    </div>
+                    <div class="link-item">
+                        <a href="https://play.google.com/store/apps/details?id=YOUR_PACKAGE" class="app-button secondary" style="display: block; text-align: center;">
+                            🤖 Google Play
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             
-            <p>We look forward to seeing you!</p>
+            <div class="reminders">
+                <h4>⏰ Important Reminders</h4>
+                <ul>
+                    <li><strong>Arrival time:</strong> Please arrive 15 minutes before your scheduled appointment</li>
+                    <li><strong>Documents:</strong> Bring your insurance card, ID, and any referral forms</li>
+                    <li><strong>Rescheduling:</strong> Notify us at least 24 hours in advance if you need to reschedule</li>
+                    <li><strong>Cancellation policy:</strong> Late cancellations may incur a fee</li>
+                    <li><strong>COVID-19:</strong> Masks are optional but recommended if you have symptoms</li>
+                </ul>
+            </div>
             
-            <p>Best regards,<br>The Team at {{ clinic_name }}</p>
+            <div class="contact-info">
+                <h4>📞 Need Help?</h4>
+                <p>We're here to assist you with any questions or concerns:</p>
+                <div class="detail-item">
+                    <span class="detail-label">📧 Email:</span>
+                    <span class="detail-value"><a href="mailto:{{ contact_email }}" style="color: #2563eb; text-decoration: none;">{{ contact_email }}</a></span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">📱 Phone:</span>
+                    <span class="detail-value"><a href="tel:+1234567890" style="color: #2563eb; text-decoration: none;">+1 (234) 567-890</a></span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">📍 Address:</span>
+                    <span class="detail-value">123 Dental Street, Suite 100, Your City, State 12345</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">🕒 Hours:</span>
+                    <span class="detail-value">Mon-Fri: 8am-6pm, Sat: 9am-2pm, Sun: Closed</span>
+                </div>
+            </div>
+            
+            <!-- Quick Action Buttons -->
+            <div class="quick-links">
+                <div class="link-item">
+                    <a href="https://{{ clinic_name|lower|replace(' ', '-') }}.com/reschedule" class="app-button secondary" style="display: block; text-align: center;">
+                        🔄 Reschedule
+                    </a>
+                </div>
+                <div class="link-item">
+                    <a href="https://{{ clinic_name|lower|replace(' ', '-') }}.com/cancel" class="app-button" style="display: block; text-align: center; background: linear-gradient(135deg, #ef4444, #dc2626);">
+                        ❌ Cancel
+                    </a>
+                </div>
+                <div class="link-item">
+                    <a href="https://{{ clinic_name|lower|replace(' ', '-') }}.com/directions" class="app-button secondary" style="display: block; text-align: center;">
+                        🗺️ Get Directions
+                    </a>
+                </div>
+            </div>
+            
+            <p style="text-align: center; margin-top: 30px; font-style: italic; color: #6b7280;">
+                "Your smile is our priority. We look forward to helping you maintain optimal oral health."
+            </p>
+            
+            <p style="margin-top: 30px;">
+                Best regards,<br>
+                <strong>The Dental Team at {{ clinic_name }}</strong><br>
+                <span style="font-size: 14px; color: #6b7280;">Committed to your dental wellness</span>
+            </p>
         </div>
         
         <div class="footer">
-            <p>&copy; 2025 {{ clinic_name }}. All rights reserved.</p>
-            <p>This is an automated message, please do not reply to this email.</p>
+            <p style="margin: 0 0 15px 0;">
+                <strong>{{ clinic_name }}</strong> | Professional Dental Care
+            </p>
+            <p style="font-size: 12px; color: #9ca3af; margin: 10px 0;">
+                This email was sent to {{ patient_email }} regarding your appointment confirmation.
+            </p>
+            <p style="font-size: 12px; color: #9ca3af; margin: 10px 0;">
+                <a href="https://{{ clinic_name|lower|replace(' ', '-') }}.com/privacy" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> | 
+                <a href="https://{{ clinic_name|lower|replace(' ', '-') }}.com/terms" style="color: #6b7280; text-decoration: none;">Terms of Service</a> | 
+                <a href="https://{{ clinic_name|lower|replace(' ', '-') }}.com/unsubscribe" style="color: #6b7280; text-decoration: none;">Unsubscribe</a>
+            </p>
+            <p style="font-size: 11px; color: #9ca3af; margin-top: 15px;">
+                &copy; {{ current_year }} {{ clinic_name }}. All rights reserved.<br>
+                This is an automated message. Please do not reply directly to this email.<br>
+                For assistance, contact us at {{ contact_email }} or call our office.
+            </p>
         </div>
     </div>
 </body>

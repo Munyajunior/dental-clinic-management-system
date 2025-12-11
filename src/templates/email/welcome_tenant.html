@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to KwantaBit Dental Clinic Management Suite</title>
+    <title>Welcome to KwantaDent Dental Clinic Management Suite</title>
     <style>
         /* Enterprise-grade styling */
         body { 
@@ -52,20 +52,29 @@
         .button { 
             background: linear-gradient(135deg, #10b981, #059669);
             color: white; 
-            padding: 14px 28px; 
+            padding: 16px 32px; 
             text-decoration: none; 
-            border-radius: 8px; 
+            border-radius: 10px; 
             display: inline-block; 
-            font-weight: 600;
-            font-size: 16px;
+            font-weight: 700;
+            font-size: 18px;
             border: none;
             cursor: pointer;
             transition: all 0.2s ease;
-            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3), 0 2px 4px -1px rgba(16, 185, 129, 0.2);
+            margin: 15px 0;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
         }
         .button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 10px -1px rgba(16, 185, 129, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 12px -1px rgba(16, 185, 129, 0.4), 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+            background: linear-gradient(135deg, #059669, #047857);
+        }
+        .button:active {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px -1px rgba(16, 185, 129, 0.3);
         }
         .security-note { 
             background: #fef3c7; 
@@ -110,6 +119,10 @@
             .content {
                 padding: 25px;
             }
+            .button {
+                padding: 14px 24px;
+                font-size: 16px;
+            }
         }
         /* Deep link instructions */
         .deeplink-instructions {
@@ -128,6 +141,7 @@
             font-size: 14px;
             margin: 10px 0;
             word-break: break-all;
+            user-select: all;
         }
         .manual-instructions {
             background: #fef3c7;
@@ -136,19 +150,70 @@
             padding: 15px;
             margin: 15px 0;
         }
+        /* Clickable link improvements */
+        .clickable-link {
+            display: inline-block;
+            margin: 10px 0;
+            padding: 10px 15px;
+            background: #3b82f6;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .clickable-link:hover {
+            background: #2563eb;
+        }
+        .copy-button {
+            background: #6b7280;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: background 0.2s;
+        }
+        .copy-button:hover {
+            background: #4b5563;
+        }
+        /* Email client compatibility */
+        .email-compatible {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            background: #f9fafb;
+        }
+        /* Platform-specific instructions */
+        .platform-section {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #8b5cf6;
+        }
+        .platform-icon {
+            font-size: 24px;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1 style="margin: 0; font-size: 28px; font-weight: 700;">Welcome to KwantaBit Dental Clinic Management</h1>
+            <h1 style="margin: 0; font-size: 28px; font-weight: 700;">Welcome to KwantaDent Dental Clinic Management</h1>
             <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Enterprise-grade clinic management starts here</p>
         </div>
         
         <div class="content">
             <p>Dear <strong>{{ user_name }}</strong>,</p>
             
-            <p>Welcome to KwantaBit Dental Clinic Management Suite! We're thrilled to partner with you in transforming your dental practice with enterprise-grade technology.</p>
+            <p>Welcome to KwantaDent Dental Clinic Management Suite! We're thrilled to partner with you in transforming your dental practice with enterprise-grade technology.</p>
             
             <div class="credentials-box">
                 <div style="display: flex; align-items: center; margin-bottom: 15px;">
@@ -159,64 +224,141 @@
                 <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;"><strong>Email:</strong></td>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-family: monospace;">{{ user_email }}</td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; width: 160px;"><strong>Email:</strong></td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; font-family: monospace; font-weight: 600;">{{ user_email }}</td>
                         </tr>
                         <tr>
-                            <td style="padding: 8px 0;"><strong>Temporary Password:</strong></td>
-                            <td style="padding: 8px 0; font-family: monospace; color: #dc2626;">{{ temporary_password }}</td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;"><strong>Temporary Password:</strong></td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; font-family: monospace; color: #dc2626; font-weight: 600;">{{ temporary_password }}</td>
                         </tr>
                         <tr>
-                            <td style="padding: 8px 0;"><strong>Clinic Slug:</strong></td>
-                            <td style="padding: 8px 0; font-family: monospace;">{{ tenant_slug }}</td>
+                            <td style="padding: 10px 0;"><strong>Clinic Slug:</strong></td>
+                            <td style="padding: 10px 0; font-family: monospace; color: #065f46; font-weight: 600;">{{ tenant_slug }}</td>
                         </tr>
                     </table>
                 </div>
                 
-                <div style="text-align: center; margin: 25px 0;">
-                    <p style="margin-bottom: 15px; font-weight: 600; color: #065f46;">🚀 Quick Start - One-Click Login</p>
-                    
-                    <!-- Clickable Deep Link Button -->
-                    <a href="{{ deep_link_url }}" class="button" onclick="trackDeepLinkClick();">
-                        Launch Dental Clinic Application
-                    </a>
-                    
-                    <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
-                        One-click setup • Opens directly in your application
+                <div style="text-align: center; margin: 30px 0;">
+                    <p style="margin-bottom: 20px; font-weight: 700; color: #065f46; font-size: 18px;">
+                        🚀 One-Click Login - Click Below!
                     </p>
                     
-                    <div style="margin-top: 15px; font-size: 13px; color: #6b7280;">
-                        If the button doesn't work, copy this link: 
-                        <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ deep_link_url }}</code>
+                    <!-- PRIMARY CLICKABLE DEEP LINK BUTTON -->
+                    <a href="{{ deep_link_url }}" class="button" 
+                       style="text-decoration: none; color: white; display: block; margin: 0 auto;">
+                        <span style="font-size: 24px; margin-right: 10px;">▶</span>
+                        Launch Dental Clinic Application
+                        <span style="font-size: 24px; margin-left: 10px;">◀</span>
+                    </a>
+                    
+                    <p style="font-size: 14px; color: #6b7280; margin-top: 15px;">
+                        <span style="color: #10b981;">✓</span> One-click setup • <span style="color: #10b981;">✓</span> Opens directly in application • <span style="color: #10b981;">✓</span> Auto-configured
+                    </p>
+                </div>
+                
+                <!-- ALTERNATIVE CLICKABLE LINKS -->
+                <div style="text-align: center; margin: 25px 0;">
+                    <p style="margin-bottom: 10px; font-weight: 600; color: #4b5563;">Alternative Access Methods:</p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+                        <!-- Direct URL Link -->
+                        <a href="{{ web_fallback_url }}" 
+                           style="display: inline-block; padding: 10px 20px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">
+                            🌐 Open in Web Browser
+                        </a>
+                        
+                        <!-- Email Client Compatible Link -->
+                        <a href="{{ deep_link_url }}" 
+                           style="display: inline-block; padding: 10px 20px; background: #8b5cf6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">
+                            📱 Open on Mobile
+                        </a>
                     </div>
                 </div>
                 
-                <!-- Deep Link Instructions -->
+                <!-- Deep Link Information -->
                 <div class="deeplink-instructions">
-                    <h4 style="margin: 0 0 10px 0; color: #1e40af;">🔗 Deep Link Information</h4>
-                    <p style="margin: 0 0 10px 0;">This link will automatically open your KwantaBit Dental application with your clinic pre-configured.</p>
-                    <div class="deeplink-code">
-                        {{ deep_link_url }}
-                    </div>
-                    <p style="margin: 10px 0 0 0; font-size: 13px; color: #6b7280;">
-                        <strong>Note:</strong> Make sure the application is installed on your device for the deep link to work.
+                    <h4 style="margin: 0 0 15px 0; color: #1e40af; display: flex; align-items: center;">
+                        <span style="margin-right: 10px;">🔗</span>
+                        Deep Link Information
+                    </h4>
+                    <p style="margin: 0 0 15px 0; font-size: 15px;">
+                        This is your personalized deep link. Clicking it will automatically open the KwantaDent application with your clinic pre-configured.
                     </p>
+                    
+                    <div style="position: relative;">
+                        <div class="deeplink-code" id="deepLinkCode">
+                            {{ deep_link_url }}
+                        </div>
+                        <button class="copy-button" onclick="copyToClipboard('{{ deep_link_url }}')" 
+                                style="position: absolute; right: 10px; top: 10px;">
+                            📋 Copy
+                        </button>
+                    </div>
+                    
+                    <p style="margin: 15px 0 0 0; font-size: 14px; color: #6b7280; background: #e5e7eb; padding: 10px; border-radius: 4px;">
+                        <strong>Note:</strong> This link will open <strong>{{ app_name }}</strong> ({{ scheme_name }}://). 
+                        If prompted, click "Open" or "Allow" to launch the application.
+                    </p>
+                </div>
+                
+                <!-- Platform-Specific Instructions -->
+                <div class="platform-section">
+                    <h4 style="margin: 0 0 15px 0; color: #7c3aed;">📱 Platform Instructions</h4>
+                    
+                    <div style="margin: 15px 0;">
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <span class="platform-icon">💻</span>
+                            <strong style="flex: 1;">On Desktop (Windows/Mac/Linux):</strong>
+                        </div>
+                        <ol style="margin: 0; padding-left: 20px; font-size: 14px;">
+                            <li>Click the green button above</li>
+                            <li>If prompted, allow "{{ app_name }}" to open</li>
+                            <li>The application will launch automatically</li>
+                        </ol>
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <span class="platform-icon">📱</span>
+                            <strong style="flex: 1;">On Mobile (iOS/Android):</strong>
+                        </div>
+                        <ol style="margin: 0; padding-left: 20px; font-size: 14px;">
+                            <li>Tap the green button</li>
+                            <li>Tap "Open in {{ app_name }}" when prompted</li>
+                            <li>If app isn't installed, you'll be guided to download it</li>
+                        </ol>
+                    </div>
                 </div>
                 
                 <!-- Manual Instructions for Troubleshooting -->
                 <div class="manual-instructions">
-                    <h4 style="margin: 0 0 10px 0; color: #b45309;">🛠️ Manual Setup (If Deep Link Doesn't Work)</h4>
-                    <ol style="margin: 10px 0; padding-left: 20px;">
-                        <li>Open KwantaBit Dental application</li>
-                        <li>Enter your email: <code>{{ user_email }}</code></li>
-                        <li>Enter temporary password: <code>{{ temporary_password }}</code></li>
-                        <li>Enter clinic name: <code>{{ tenant_slug }}</code></li>
-                        <li>Click "Sign In"</li>
-                    </ol>
+                    <h4 style="margin: 0 0 10px 0; color: #b45309; display: flex; align-items: center;">
+                        <span style="margin-right: 10px;">🛠️</span>
+                        Manual Setup (If Links Don't Work)
+                    </h4>
+                    
+                    <div style="background: white; padding: 15px; border-radius: 6px; margin: 10px 0;">
+                        <p style="margin: 0 0 10px 0; font-weight: 600;">Manual Login Steps:</p>
+                        <ol style="margin: 0; padding-left: 20px; font-size: 14px;">
+                            <li>Open <strong>{{ app_name }}</strong> application</li>
+                            <li>Enter email: <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ user_email }}</code></li>
+                            <li>Enter temporary password: <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ temporary_password }}</code></li>
+                            <li>Enter clinic name: <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ tenant_slug }}</code></li>
+                            <li>Click "Sign In"</li>
+                        </ol>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 15px;">
+                        <a href="{{ download_url }}" 
+                           style="display: inline-block; padding: 8px 16px; background: #dc2626; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">
+                            📥 Download Application
+                        </a>
+                    </div>
                 </div>
                 
                 <div class="security-note">
                     <strong>🔒 Security First:</strong> This is a temporary password. You'll be required to change it on first login for enhanced security.
+                    We recommend using a password manager for secure password storage.
                 </div>
             </div>
             
@@ -224,12 +366,17 @@
             
             <div class="step">
                 <h4 style="margin: 0 0 10px 0; color: #065f46;">1. Launch Application</h4>
-                <p style="margin: 0;">Click the button above or open "KwantaBit Dental Management" from your applications.</p>
+                <p style="margin: 0;">
+                    <a href="{{ deep_link_url }}" style="color: #10b981; font-weight: 700; text-decoration: none; border-bottom: 2px solid #10b981; padding-bottom: 2px;">
+                        Click here to launch app
+                    </a> 
+                    or open "{{ app_name }}" from your applications.
+                </p>
             </div>
             
             <div class="step">
                 <h4 style="margin: 0 0 10px 0; color: #065f46;">2. First-Time Setup</h4>
-                <p style="margin: 0;">Your clinic <strong>({{ tenant_slug }})</strong> will be pre-filled. Enter your credentials to continue.</p>
+                <p style="margin: 0;">Your clinic <strong style="color: #047857;">({{ tenant_slug }})</strong> will be pre-filled. Enter your credentials to continue.</p>
             </div>
             
             <div class="step">
@@ -273,54 +420,123 @@
             
             <div style="background: #eff6ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
                 <h4 style="margin: 0 0 10px 0; color: #1e40af;">💡 Pro Tip</h4>
-                <p style="margin: 0;">Bookmark this email for future reference. Your clinic slug <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ tenant_slug }}</code> will be needed for future logins.</p>
+                <p style="margin: 0;">
+                    Bookmark this email for future reference. Your clinic slug 
+                    <code style="background: #dbeafe; color: #1e40af; padding: 4px 8px; border-radius: 4px; font-weight: 700;">{{ tenant_slug }}</code> 
+                    will be needed for future logins.
+                </p>
             </div>
             
-            <p><strong>Need Enterprise Support?</strong></p>
+            <p><strong style="font-size: 16px;">Need Enterprise Support?</strong></p>
             <p>Our dedicated support team is available 24/7 for enterprise clients:</p>
-            <ul>
-                <li>📞 <strong>WhatsApp Support:</strong> {{ whatsapp_support }}</li>
-                <li>📧 <strong>Email:</strong> <a href="mailto:{{ support_email }}">{{ support_email }}</a></li>
-                <li>🔧 <strong>Setup Assistance:</strong> <a href="{{ setup_guide_url }}">Comprehensive Setup Guide</a></li>
-                <li>🎥 <strong>Video Tutorials:</strong> <a href="https://kwantabit.com/tutorials">Watch Tutorials</a></li>
-                <li>📱 <strong>Download Application:</strong> <a href="{{ download_url }}">Download Latest Version</a></li>
+            <ul style="padding-left: 20px;">
+                <li style="margin-bottom: 10px;">
+                    <strong>📞 WhatsApp Support:</strong> 
+                    <a href="https://wa.me/{{ whatsapp_support|replace('+', '')|replace(' ', '') }}" 
+                       style="color: #25D366; text-decoration: none; font-weight: 600;">
+                        {{ whatsapp_support }}
+                    </a>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>📧 Email:</strong> 
+                    <a href="mailto:{{ support_email }}" style="color: #3b82f6; text-decoration: none; font-weight: 600;">
+                        {{ support_email }}
+                    </a>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>🔧 Setup Assistance:</strong> 
+                    <a href="{{ setup_guide_url }}" style="color: #10b981; text-decoration: none; font-weight: 600;">
+                        Comprehensive Setup Guide
+                    </a>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>🎥 Video Tutorials:</strong> 
+                    <a href="https://kwantabit.com/tutorials" style="color: #8b5cf6; text-decoration: none; font-weight: 600;">
+                        Watch Tutorials
+                    </a>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>📱 Download Application:</strong> 
+                    <a href="{{ download_url }}" style="color: #dc2626; text-decoration: none; font-weight: 600;">
+                        Download Latest Version
+                    </a>
+                </li>
             </ul>
             
             <div style="border-top: 2px solid #e5e7eb; margin: 30px 0; padding-top: 20px;">
-                <h4 style="color: #065f46; margin-bottom: 10px;">🎯 Quick Actions</h4>
-                <p style="margin: 0;">
-                    <a href="{{ deep_link_url }}" style="color: #10b981; font-weight: 600; text-decoration: none; border-bottom: 2px solid #10b981; padding-bottom: 2px;">
-                        Click here to launch app
-                    </a> • 
-                    <a href="{{ setup_guide_url }}" style="color: #3b82f6; font-weight: 600; text-decoration: none; border-bottom: 2px solid #3b82f6; padding-bottom: 2px;">
-                        View setup guide
-                    </a> • 
-                    <a href="{{ download_url }}" style="color: #8b5cf6; font-weight: 600; text-decoration: none; border-bottom: 2px solid #8b5cf6; padding-bottom: 2px;">
-                        Download app
+                <h4 style="color: #065f46; margin-bottom: 15px;">🎯 Quick Actions</h4>
+                <div style="display: flex; flex-wrap: wrap; gap: 15px;">
+                    <a href="{{ deep_link_url }}" 
+                       style="flex: 1; min-width: 200px; padding: 12px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 700; text-align: center; border: 2px solid #10b981;">
+                        ▶ Launch Application
                     </a>
-                </p>
+                    <a href="{{ setup_guide_url }}" 
+                       style="flex: 1; min-width: 200px; padding: 12px; background: white; color: #3b82f6; text-decoration: none; border-radius: 8px; font-weight: 700; text-align: center; border: 2px solid #3b82f6;">
+                        📖 View Setup Guide
+                    </a>
+                    <a href="{{ download_url }}" 
+                       style="flex: 1; min-width: 200px; padding: 12px; background: white; color: #8b5cf6; text-decoration: none; border-radius: 8px; font-weight: 700; text-align: center; border: 2px solid #8b5cf6;">
+                        📥 Download App
+                    </a>
+                </div>
             </div>
             
             <p>We're committed to your success and look forward to helping you optimize your clinic operations!</p>
             
             <p>Best regards,<br>
-            <strong>The KwantaBit Technologies Enterprise Team</strong></p>
+            <strong style="font-size: 16px; color: #065f46;">The KwantaBit Technologies Enterprise Team</strong></p>
+            
+            <!-- Quick Reference Card -->
+            <div style="background: #f8fafc; border: 2px dashed #e5e7eb; border-radius: 8px; padding: 20px; margin-top: 30px;">
+                <h4 style="margin: 0 0 15px 0; color: #4b5563; text-align: center;">📋 Quick Reference</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #6b7280;">Your Email</div>
+                        <div style="font-weight: 700; color: #1f2937;">{{ user_email[:20] }}{% if user_email|length > 20 %}...{% endif %}</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #6b7280;">Clinic Name</div>
+                        <div style="font-weight: 700; color: #065f46;">{{ tenant_slug }}</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #6b7280;">Application</div>
+                        <div style="font-weight: 700; color: #8b5cf6;">{{ app_name }}</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #6b7280;">Scheme</div>
+                        <div style="font-weight: 700; color: #dc2626;">{{ scheme_name }}</div>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="footer">
             <p style="margin: 0 0 10px 0;">
-                <strong>KwantaBit Technologies Inc.</strong><br>
+                <strong style="font-size: 16px;">KwantaBit Technologies Inc.</strong><br>
                 Enterprise Software Solutions
             </p>
-            <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+            <p style="margin: 0 0 15px 0; font-size: 12px; color: #9ca3af;">
                 © 2025 KwantaBit Technologies. All rights reserved.<br>
-                This is an automated message from an enterprise system. Please do not reply to this email.<br>
-                <a href="https://kwantabit.com/privacy" style="color: #6b7280;">Privacy Policy</a> • 
-                <a href="https://kwantabit.com/terms" style="color: #6b7280;">Terms of Service</a> • 
-                <a href="https://kwantabit.com/security" style="color: #6b7280;">Security Information</a>
+                This is an automated message from an enterprise system. Please do not reply to this email.
             </p>
-            <p style="margin: 15px 0 0 0; font-size: 11px; color: #9ca3af;">
-                If you received this email in error or did not create a clinic account, please contact our security team immediately at <a href="mailto:security@kwantabit.com" style="color: #6b7280;">security@kwantabit.com</a>
+            <div style="margin: 15px 0;">
+                <a href="https://kwantabit.com/privacy" 
+                   style="color: #6b7280; text-decoration: none; margin: 0 10px; font-size: 12px;">
+                    Privacy Policy
+                </a> • 
+                <a href="https://kwantabit.com/terms" 
+                   style="color: #6b7280; text-decoration: none; margin: 0 10px; font-size: 12px;">
+                    Terms of Service
+                </a> • 
+                <a href="https://kwantabit.com/security" 
+                   style="color: #6b7280; text-decoration: none; margin: 0 10px; font-size: 12px;">
+                    Security Information
+                </a>
+            </div>
+            <p style="margin: 15px 0 0 0; font-size: 11px; color: #9ca3af; background: #e5e7eb; padding: 10px; border-radius: 4px;">
+                <strong>Security Notice:</strong> If you received this email in error or did not create a clinic account, 
+                please contact our security team immediately at 
+                <a href="mailto:security@kwantabit.com" style="color: #dc2626; font-weight: 700;">security@kwantabit.com</a>
             </p>
             <p style="margin: 15px 0 0 0; font-size: 10px; color: #9ca3af; font-style: italic;">
                 Deep Link: {{ deep_link_url }} • Application will launch with pre-filled clinic: {{ tenant_slug }}
@@ -328,32 +544,24 @@
         </div>
     </div>
 
-    <!-- Simple JavaScript for tracking (optional) -->
+    <!-- Simplified JavaScript for email compatibility -->
     <script>
-        function trackDeepLinkClick() {
-            // This is a simple function that can be used for analytics
-            // In production, you might want to use a proper analytics service
-            console.log('Deep link clicked: {{ deep_link_url }}');
-            
-            // You can add Google Analytics or other tracking here
-            if (typeof gtag !== 'undefined') {
-                gtag('event', 'deep_link_click', {
-                    'event_category': 'email',
-                    'event_label': 'welcome_tenant_email',
-                    'link_url': '{{ deep_link_url }}'
-                });
-            }
+        // Copy to clipboard function
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                var button = event.target;
+                var originalText = button.textContent;
+                button.textContent = '✅ Copied!';
+                button.style.background = '#10b981';
+                
+                setTimeout(function() {
+                    button.textContent = originalText;
+                    button.style.background = '#6b7280';
+                }, 2000);
+            }).catch(function(err) {
+                console.error('Failed to copy: ', err);
+            });
         }
-        
-        // Alternative method for email clients that strip JavaScript
-        // Add a redirect to a tracking pixel/image
-        window.onload = function() {
-            var trackingPixel = new Image();
-            trackingPixel.src = 'https://kwantabit.com/track/email_open?type=welcome_tenant&email={{ user_email|urlencode }}&tenant={{ tenant_slug|urlencode }}';
-        };
     </script>
-    <!--  for email open tracking -->
-<img src="https://kwantabit.com/track/email.png?type=welcome_tenant&email={{ user_email|urlencode }}&tenant={{ tenant_slug|urlencode }}" 
-     width="1" height="1" style="display:none;" alt="Email Tracking Pixel">
 </body>
 </html>

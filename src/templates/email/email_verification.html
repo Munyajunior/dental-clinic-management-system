@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify Your Email - KwantaBit Dental Clinic</title>
+    <title>Verify Your Email - {{ app_name }}</title>
     <style>
         /* Enterprise-grade styling */
         body { 
@@ -71,6 +71,20 @@
             text-decoration: none;
             color: white;
         }
+        .button-secondary { 
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white; 
+            padding: 12px 24px; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            display: inline-block; 
+            font-weight: 600;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin: 10px 5px;
+        }
         .security-note { 
             background: #fef3c7; 
             border-left: 4px solid #f59e0b; 
@@ -105,6 +119,7 @@
             margin: 15px 0;
             text-align: center;
             letter-spacing: 1px;
+            word-break: break-all;
         }
         .feature-grid {
             display: grid;
@@ -123,6 +138,38 @@
             font-size: 24px;
             margin-bottom: 8px;
         }
+        .instruction-box {
+            background: #f0fdf4;
+            border: 1px solid #10b981;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .manual-instructions {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .link-display {
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            margin: 10px 0;
+            word-break: break-all;
+            text-align: center;
+        }
+        .platform-tips {
+            background: #fefce8;
+            border: 1px solid #fbbf24;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
         @media (max-width: 600px) {
             .feature-grid {
                 grid-template-columns: 1fr;
@@ -140,13 +187,13 @@
     <div class="container">
         <div class="header">
             <h1 style="margin: 0; font-size: 28px; font-weight: 700;">Verify Your Email Address</h1>
-            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Secure access to KwantaBit Dental Clinic Management</p>
+            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Secure access to {{ clinic_name }} Management</p>
         </div>
         
         <div class="content">
             <p>Dear <strong>{{ user_name }}</strong>,</p>
             
-            <p>Thank you for choosing KwantaBit Dental Clinic Management! To ensure the security of your account and enable full access to all features, please verify your email address.</p>
+            <p>Thank you for choosing {{ clinic_name }}! To ensure the security of your account and enable full access to all features, please verify your email address.</p>
             
             <div class="verification-box">
                 <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
@@ -158,26 +205,53 @@
                     Click the button below to verify your email address and activate your account:
                 </p>
                 
+                <!-- PRIMARY CLICKABLE DEEP LINK BUTTON -->
                 <div style="text-align: center; margin: 25px 0;">
-                    <a href="{{ deep_link_url }}" class="button">
-                        ✅ Verify Email Address
+                    <a href="{{ deep_link_url }}" class="button" style="text-decoration: none; color: white;">
+                        ✅ Verify Email Address in {{ app_name }}
                     </a>
                     <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
                         One-click verification • Opens directly in application
                     </p>
                 </div>
-                
-                <div style="background: white; padding: 15px; border-radius: 8px; margin: 20px 0;">
+
+                <!-- MANUAL ENTRY OPTION -->
+                <div class="manual-instructions">
                     <p style="margin: 0 0 10px 0; font-size: 14px; color: #6b7280;">
-                        <strong>Verification Code:</strong> (for manual entry)
+                        <strong>📝 Manual Verification Option:</strong>
+                    </p>
+                    <p style="margin: 0 0 15px 0; color: #4b5563;">
+                        If the button above doesn't work, you can manually verify using this code:
                     </p>
                     <div class="code-box">
                         {{ verification_token }}
                     </div>
                     <p style="margin: 10px 0 0 0; font-size: 12px; color: #9ca3af;">
-                        Enter this code in the application if the button doesn't work
+                        Enter this code in the application when prompted for verification
                     </p>
                 </div>
+            </div>
+
+            <!-- VERIFICATION INSTRUCTIONS -->
+            <div class="instruction-box">
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">📋 {{ verification_instructions|safe }}</h4>
+                <p style="margin: 0 0 10px 0; font-size: 14px;"><strong>Direct Link:</strong></p>
+                <div class="link-display">
+                    {{ deep_link_url }}
+                </div>
+                <p style="margin: 10px 0 0 0; font-size: 12px; color: #6b7280;">
+                    Copy and paste this link into your browser if the button doesn't work
+                </p>
+            </div>
+
+            <!-- PLATFORM-SPECIFIC TIPS -->
+            <div class="platform-tips">
+                <h4 style="margin: 0 0 10px 0; color: #92400e;">🚀 How to Launch the Application</h4>
+                <p style="margin: 0 0 15px 0;">{{ platform_instructions|safe }}</p>
+                <p style="margin: 10px 0 0 0; font-size: 13px; color: #78350f;">
+                    <strong>Note:</strong> On first use, your system may ask for permission to open "{{ app_name }}". 
+                    This is normal and required for the application to function properly.
+                </p>
             </div>
             
             <div class="security-note">
@@ -210,29 +284,56 @@
                 </div>
             </div>
 
-            <div style="background: #f0fdf4; border: 1px solid #10b981; border-radius: 8px; padding: 20px; margin: 25px 0;">
-                <h4 style="margin: 0 0 10px 0; color: #065f46;">💡 Having Trouble?</h4>
-                <p style="margin: 0 0 10px 0;">If the verification button doesn't work:</p>
-                <ol style="margin: 0; padding-left: 20px; color: #4b5563;">
-                    <li>Copy the verification code above</li>
-                    <li>Open the Dental Clinic Management application</li>
-                    <li>Navigate to Settings → Account → Verify Email</li>
-                    <li>Paste the verification code when prompted</li>
-                </ol>
+            <!-- TROUBLESHOOTING SECTION -->
+            <div style="background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #374151;">🛠️ Troubleshooting</h4>
+                <p style="margin: 0 0 15px 0;">If you're having trouble with the verification:</p>
+                
+                <div class="step">
+                    <strong>Option 1: Click the Button Above</strong>
+                    <p style="margin: 8px 0 0 0; color: #6b7280;">Most reliable method - opens {{ app_name }} directly</p>
+                </div>
+                
+                <div class="step">
+                    <strong>Option 2: Copy the Deep Link</strong>
+                    <p style="margin: 8px 0 0 0; color: #6b7280;">Manually paste into browser: <code>{{ scheme_name }}://verify-email</code></p>
+                </div>
+                
+                <div class="step">
+                    <strong>Option 3: Use Verification Code</strong>
+                    <p style="margin: 8px 0 0 0; color: #6b7280;">Enter the code shown above in the application</p>
+                </div>
             </div>
             
             <p><strong>Need Help?</strong></p>
             <p>Our support team is here to assist you with the verification process:</p>
             <ul style="color: #4b5563;">
-                <li>📧 <strong>Email Support:</strong> <a href="mailto:{{ support_email }}" style="color: #3b82f6;">{{ support_email }}</a></li>
-                <li>🔧 <strong>Setup Guide:</strong> <a href="https://docs.kwantabit.com/verification-help" style="color: #3b82f6;">Verification Help Center</a></li>
-                <li>🎥 <strong>Video Tutorial:</strong> <a href="https://kwantabit.com/tutorials/email-verification" style="color: #3b82f6;">Watch Verification Tutorial</a></li>
+                <li>📧 <strong>Email Support:</strong> <a href="mailto:{{ support_email }}" style="color: #3b82f6; text-decoration: none;">{{ support_email }}</a></li>
+                {% if whatsapp_support %}
+                <li>💬 <strong>WhatsApp Support:</strong> <a href="https://wa.me/{{ whatsapp_support }}" style="color: #3b82f6; text-decoration: none;">Chat with us</a></li>
+                {% endif %}
+                <li>🔧 <strong>Setup Guide:</strong> <a href="https://docs.kwantabit.com/verification-help" style="color: #3b82f6; text-decoration: none;">Verification Help Center</a></li>
+                <li>🎥 <strong>Video Tutorial:</strong> <a href="https://kwantabit.com/tutorials/email-verification" style="color: #3b82f6; text-decoration: none;">Watch Verification Tutorial</a></li>
             </ul>
+            
+            <!-- ALTERNATIVE LINKS -->
+            <div style="text-align: center; margin: 30px 0; padding: 20px; background: #eff6ff; border-radius: 8px;">
+                <p style="margin: 0 0 15px 0; font-weight: 600;">Alternative Verification Methods:</p>
+                <div>
+                    <a href="{{ deep_link_url }}" class="button-secondary" style="text-decoration: none; color: white;">
+                        Open in {{ app_name }}
+                    </a>
+                    <a href="https://app.kwantabit-dental.com/verify-email?token={{ verification_token }}" class="button-secondary" style="text-decoration: none; color: white;">
+                        Web Verification
+                    </a>
+                </div>
+            </div>
             
             <p>Thank you for helping us maintain a secure environment for your dental clinic management needs.</p>
             
             <p>Best regards,<br>
-            <strong>The KwantaBit Technologies Security Team</strong></p>
+            <strong>The {{ clinic_name }} Security Team</strong><br>
+            <span style="font-size: 12px; color: #6b7280;">Powered by {{ app_name }}</span></p>
         </div>
         
         <div class="footer">
@@ -241,14 +342,17 @@
                 Enterprise Healthcare Solutions
             </p>
             <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-                © 2025 KwantaBit Technologies. All rights reserved.<br>
+                © {{ current_year }} KwantaBit Technologies. All rights reserved.<br>
                 This email was sent to {{ user_email }} as part of our account security process.<br>
-                <a href="https://kwantabit.com/privacy" style="color: #6b7280;">Privacy Policy</a> • 
-                <a href="https://kwantabit.com/terms" style="color: #6b7280;">Terms of Service</a> • 
-                <a href="https://kwantabit.com/security" style="color: #6b7280;">Security Information</a>
+                <a href="https://kwantabit.com/privacy" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> • 
+                <a href="https://kwantabit.com/terms" style="color: #6b7280; text-decoration: none;">Terms of Service</a> • 
+                <a href="https://kwantabit.com/security" style="color: #6b7280; text-decoration: none;">Security Information</a>
             </p>
             <p style="margin: 15px 0 0 0; font-size: 11px; color: #9ca3af;">
-                If you believe you received this email in error or have security concerns, please contact us immediately at <a href="mailto:security@kwantabit.com" style="color: #6b7280;">security@kwantabit.com</a>
+                If you believe you received this email in error or have security concerns, please contact us immediately at <a href="mailto:security@kwantabit.com" style="color: #6b7280; text-decoration: none;">security@kwantabit.com</a>
+            </p>
+            <p style="margin: 10px 0 0 0; font-size: 10px; color: #9ca3af;">
+                Application Scheme: <code>{{ scheme_name }}</code> • Version: {{ app_version }}
             </p>
         </div>
     </div>

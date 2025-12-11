@@ -1,5 +1,5 @@
 <!-- src/templates/email/welcome_staff.html -->
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -66,6 +66,16 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 10px -1px rgba(59, 130, 246, 0.4);
         }
+        .deep-link-box {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: monospace;
+            word-break: break-all;
+            font-size: 14px;
+        }
         .security-note { 
             background: #fef3c7; 
             border-left: 4px solid #f59e0b; 
@@ -119,6 +129,53 @@
             padding: 20px;
             margin: 20px 0;
         }
+        .link-instructions {
+            background: #f8fafc;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        .mobile-hint {
+            display: flex;
+            align-items: center;
+            background: #dbeafe;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .mobile-hint:before {
+            content: "📱";
+            margin-right: 10px;
+            font-size: 18px;
+        }
+        .desktop-hint {
+            display: flex;
+            align-items: center;
+            background: #f0f9ff;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .desktop-hint:before {
+            content: "💻";
+            margin-right: 10px;
+            font-size: 18px;
+        }
+        .clickable-link {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
+            border-bottom: 2px solid #93c5fd;
+            padding-bottom: 2px;
+        }
+        .clickable-link:hover {
+            color: #1d4ed8;
+            border-bottom-color: #3b82f6;
+        }
         @media (max-width: 600px) {
             .feature-grid {
                 grid-template-columns: 1fr;
@@ -156,27 +213,63 @@
                 <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;"><strong>Email:</strong></td>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; width: 140px;"><strong>Email:</strong></td>
                             <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-family: monospace;">{{ staff_email }}</td>
                         </tr>
                         {% if temporary_password %}
                         <tr>
-                            <td style="padding: 8px 0;"><strong>Temporary Password:</strong></td>
+                            <td style="padding: 8px 0; width: 140px;"><strong>Temporary Password:</strong></td>
                             <td style="padding: 8px 0; font-family: monospace; color: #dc2626;">{{ temporary_password }}</td>
                         </tr>
                         {% endif %}
                     </table>
                 </div>
                 
+                <!-- ONE-CLICK LAUNCH BUTTON -->
                 <div style="text-align: center; margin: 25px 0;">
-                    <p style="margin-bottom: 15px; font-weight: 600; color: #1e40af;">🚀 Quick Start</p>
-                    <a href="{{ deep_link_url }}" class="button">
-                        Launch Dental Clinic App
+                    <p style="margin-bottom: 15px; font-weight: 600; color: #1e40af;">🚀 One-Click Launch</p>
+                    <a href="{{ deep_link_url }}" class="button" onclick="trackLaunchClick()">
+                        Launch Dental Clinic App Now
                     </a>
                     <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
-                        One-click access • Professional dashboard
+                        Opens {{ app_name }} directly • Pre-fills clinic: {{ clinic_slug }}
                     </p>
                 </div>
+                
+                <!-- ALTERNATIVE DEEP LINK FORMAT -->
+                <div class="deep-link-box">
+                    <strong>Alternative Access:</strong> Copy and click this link:<br>
+                    <a href="{{ deep_link_url }}" class="clickable-link">{{ deep_link_url }}</a>
+                </div>
+                
+                <!-- PLATFORM-SPECIFIC INSTRUCTIONS -->
+                {% if platform_instructions %}
+                <div class="link-instructions">
+                    {{ platform_instructions|safe }}
+                </div>
+                {% endif %}
+                
+                <!-- MOBILE HINT -->
+                <div class="mobile-hint">
+                    <strong>On Mobile:</strong> Tap the button above. If prompted, select "Open in {{ app_name }}".
+                </div>
+                
+                <!-- DESKTOP HINT -->
+                <div class="desktop-hint">
+                    <strong>On Desktop:</strong> Click the button. Your browser may ask for permission to open the application.
+                </div>
+                
+                <!-- WEB FALLBACK -->
+                {% if web_fallback_url %}
+                <div style="text-align: center; margin: 20px 0;">
+                    <p style="font-size: 14px; color: #6b7280; margin-bottom: 10px;">
+                        <strong>Web Alternative:</strong> Can't open the app?
+                    </p>
+                    <a href="{{ web_fallback_url }}" class="button" style="background: linear-gradient(135deg, #10b981, #059669);">
+                        Access Web Portal
+                    </a>
+                </div>
+                {% endif %}
                 
                 {% if temporary_password %}
                 <div class="security-note">
@@ -188,23 +281,35 @@
             <h3 style="color: #1e40af; border-bottom: 2px solid #3b82f6; padding-bottom: 8px;">Getting Started Guide</h3>
             
             <div class="step">
-                <h4 style="margin: 0 0 10px 0; color: #1e40af;">1. Access Your Account</h4>
-                <p style="margin: 0;">Click the button above or open the Dental Clinic Management application.</p>
+                <h4 style="margin: 0 0 10px 0; color: #1e40af;">1. Launch the Application</h4>
+                <p style="margin: 0;">Click the blue "Launch Dental Clinic App Now" button above for one-click access.</p>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">
+                    <strong>URL Scheme:</strong> <code>{{ scheme_name }}://login?tenant={{ clinic_slug }}</code>
+                </p>
             </div>
             
             <div class="step">
                 <h4 style="margin: 0 0 10px 0; color: #1e40af;">2. First Login</h4>
                 <p style="margin: 0;">Use your credentials above. Your clinic <strong>({{ clinic_slug }})</strong> will be pre-selected.</p>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">
+                    <strong>Auto-fill:</strong> Email and clinic are pre-filled for faster login
+                </p>
             </div>
             
             <div class="step">
                 <h4 style="margin: 0 0 10px 0; color: #1e40af;">3. Complete Your Profile</h4>
                 <p style="margin: 0;">Add your profile picture, contact details, and professional information.</p>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">
+                    <strong>Required:</strong> Profile photo and emergency contact information
+                </p>
             </div>
             
             <div class="step">
                 <h4 style="margin: 0 0 10px 0; color: #1e40af;">4. Explore Features</h4>
                 <p style="margin: 0;">Familiarize yourself with the tools and features available for your role.</p>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">
+                    <strong>Take the tour:</strong> Interactive walkthrough available in the app
+                </p>
             </div>
 
             <h3 style="color: #1e40af; margin-top: 30px;">Role-Specific Features</h3>
@@ -256,12 +361,18 @@
                     <div>
                         <strong>Clinic Manager</strong>
                         <p style="margin: 5px 0; color: #6b7280;">{{ manager_name }}</p>
-                        <p style="margin: 5px 0; color: #6b7280;">{{ manager_email }}</p>
+                        <p style="margin: 5px 0; color: #6b7280;">
+                            <a href="mailto:{{ manager_email }}" class="clickable-link">{{ manager_email }}</a>
+                        </p>
                     </div>
                     <div>
                         <strong>Technical Support</strong>
-                        <p style="margin: 5px 0; color: #6b7280;">{{ support_email }}</p>
-                        <p style="margin: 5px 0; color: #6b7280;">{{ whatsapp_support }}</p>
+                        <p style="margin: 5px 0; color: #6b7280;">
+                            <a href="mailto:{{ support_email }}" class="clickable-link">{{ support_email }}</a>
+                        </p>
+                        <p style="margin: 5px 0; color: #6b7280;">
+                            <a href="https://wa.me/{{ whatsapp_support|replace('+', '')|replace(' ', '')|replace('-', '') }}" class="clickable-link">{{ whatsapp_support }}</a>
+                        </p>
                     </div>
                 </div>
                 
@@ -272,23 +383,47 @@
             </div>
             
             <div style="background: #f0fdf4; border: 1px solid #10b981; border-radius: 8px; padding: 20px; margin: 25px 0;">
-                <h4 style="margin: 0 0 10px 0; color: #065f46;">💡 Pro Tip</h4>
-                <p style="margin: 0;">Bookmark this email for future reference. Your clinic code <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ clinic_slug }}</code> will be needed for future logins.</p>
+                <h4 style="margin: 0 0 10px 0; color: #065f46;">💡 Pro Tips</h4>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                    <li>Bookmark this email for future reference</li>
+                    <li>Your clinic code: <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 3px;">{{ clinic_slug }}</code></li>
+                    <li>Install the desktop app for faster access</li>
+                    <li>Enable notifications for appointment reminders</li>
+                </ul>
             </div>
             
             <p><strong>Need Assistance?</strong></p>
             <p>Our support team and clinic management are here to help you get started:</p>
             <ul>
-                <li>📞 <strong>Clinic Manager:</strong> {{ manager_name }} ({{ manager_email }})</li>
-                <li>🔧 <strong>Technical Support:</strong> {{ support_email }}</li>
-                <li>📚 <strong>Training Materials:</strong> <a href="{{ training_guide_url }}">Staff Training Guide</a></li>
-                <li>🎥 <strong>Video Tutorials:</strong> <a href="https://kwantabit.com/tutorials">Watch Role-Specific Tutorials</a></li>
+                <li>📞 <strong>Clinic Manager:</strong> 
+                    <a href="mailto:{{ manager_email }}" class="clickable-link">{{ manager_name }}</a> ({{ manager_email }})
+                </li>
+                <li>🔧 <strong>Technical Support:</strong> 
+                    <a href="mailto:{{ support_email }}" class="clickable-link">{{ support_email }}</a>
+                </li>
+                <li>📚 <strong>Training Materials:</strong> 
+                    <a href="{{ training_guide_url }}" class="clickable-link">Staff Training Guide</a>
+                </li>
+                <li>🎥 <strong>Video Tutorials:</strong> 
+                    <a href="https://kwantabit.com/tutorials" class="clickable-link">Watch Role-Specific Tutorials</a>
+                </li>
+                <li>📱 <strong>Quick Access:</strong> 
+                    <a href="{{ deep_link_url }}" class="clickable-link">Click here to launch app anytime</a>
+                </li>
             </ul>
             
             <p>We're excited to have you on board and look forward to working together to provide outstanding dental care to our patients!</p>
             
             <p>Warm welcome,<br>
             <strong>The {{ clinic_name }} Management Team</strong></p>
+            
+            <!-- ADDITIONAL DEEP LINK SECTION -->
+            <div style="border-top: 1px dashed #d1d5db; margin-top: 30px; padding-top: 20px;">
+                <p style="font-size: 13px; color: #6b7280; text-align: center;">
+                    <strong>Quick Links for Future Use:</strong><br>
+                    <a href="{{ deep_link_url }}" style="font-size: 12px; color: #6b7280;">{{ scheme_name }}://login?tenant={{ clinic_slug }}</a>
+                </p>
+            </div>
         </div>
         
         <div class="footer">
@@ -299,10 +434,34 @@
             <p style="margin: 0; font-size: 12px; color: #9ca3af;">
                 © 2025 {{ clinic_name }}. All rights reserved.<br>
                 This is an automated staff onboarding message.<br>
-                <a href="https://kwantabit.com/privacy" style="color: #6b7280;">Privacy Policy</a> • 
-                <a href="https://kwantabit.com/terms" style="color: #6b7280;">Terms of Service</a>
+                <a href="https://kwantabit.com/privacy" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> • 
+                <a href="https://kwantabit.com/terms" style="color: #6b7280; text-decoration: none;">Terms of Service</a> •
+                <a href="{{ deep_link_url }}" style="color: #6b7280; text-decoration: none;">Launch App</a>
             </p>
         </div>
     </div>
+    
+    <script>
+        // Simple tracking for launch button clicks
+        function trackLaunchClick() {
+            console.log('Launch button clicked for clinic: {{ clinic_slug }}');
+            // You could add analytics here
+        }
+        
+        // Make all deep links more visible on click
+        document.addEventListener('DOMContentLoaded', function() {
+            const deepLinks = document.querySelectorAll('a[href*="{{ scheme_name }}://"]');
+            deepLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    console.log('Deep link clicked:', this.href);
+                    // Add visual feedback
+                    this.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.3)';
+                    setTimeout(() => {
+                        this.style.boxShadow = '';
+                    }, 300);
+                });
+            });
+        });
+    </script>
 </body>
 </html>
