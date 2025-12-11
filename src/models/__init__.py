@@ -26,6 +26,7 @@ from .auth import (
 )
 from .treatment_template import TreatmentTemplate, TreatmentTemplateItem
 from .patient_sharing import PatientSharing
+from .audit_log import AuditLog
 
 # Now configure relationships that require cross-references
 from sqlalchemy.orm import configure_mappers, relationship
@@ -64,4 +65,5 @@ __all__ = [
     "TreatmentTemplate",
     "TreatmentTemplateItem",
     "PatientSharing",
+    "AuditLog",
 ]
