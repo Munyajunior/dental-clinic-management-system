@@ -1,14 +1,15 @@
 # src/services/password_reset_service.py
 from core.email_config import email_settings
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks, HTTPException, Request
 import asyncio
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from db.database import AsyncSessionLocal
 from models.user import User
 from models.auth import PasswordResetToken
@@ -25,10 +26,14 @@ class PasswordResetService:
     """Service for handling password reset operations"""
 
     def __init__(self):
-        self.token_expiry_hours = 24  # Token expires after 24 hours
+        self.token_expiry_hours = 1  # Token expires after 1 hour
 
     async def request_password_reset(
-        self, db: AsyncSession, user_id: UUID, background_tasks: BackgroundTasks
+        self,
+        request: Request,
+        db: AsyncSession,
+        user_id: UUID,
+        background_tasks: BackgroundTasks,
     ) -> Dict[str, Any]:
         """Request password reset for a user"""
         try:
@@ -62,9 +67,10 @@ class PasswordResetService:
 
             # Send reset email
             background_tasks.add_task(
-                self._send_password_reset_email_sync,
-                str(user.id),
+                self._send_password_reset_email_async,
+                user.id,
                 token,
+                request,
             )
 
             logger.info(f"Password reset token generated for user: {user.email}")
@@ -72,26 +78,62 @@ class PasswordResetService:
 
         except Exception as e:
             await db.rollback()
-            logger.error(f"Password reset request failed for {email}: {e}")
+            logger.error(f"Password reset request failed for {user.email}: {e}")
             return {"success": False, "error": str(e)}
 
-    async def verify_reset_token(self, db: AsyncSession, token: str) -> bool:
+    async def verify_reset_token(
+        self, db: AsyncSession, token: str
+    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Verify if a reset token is valid"""
         try:
+            # Get token with full user information
             result = await db.execute(
-                select(PasswordResetToken).where(
+                select(PasswordResetToken, User)
+                .options(joinedload(User.tenant))  # Eager load tenant if needed
+                .join(User, PasswordResetToken.user_id == User.id)
+                .where(
                     PasswordResetToken.token == token,
-                    PasswordResetToken.expires_at > datetime.utcnow(),
+                    PasswordResetToken.expires_at > datetime.now(timezone.utc),
                     PasswordResetToken.is_used == False,
                 )
             )
-            reset_token = result.scalar_one_or_none()
+            token_info = result.first()
 
-            return reset_token is not None
+            if token_info:
+                token_record, user = token_info
+
+                # Return comprehensive user info
+                user_info = {
+                    "email": user.email,
+                    "id": str(user.id),
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+                    "is_active": user.is_active,
+                    "role": (
+                        user.role.value
+                        if hasattr(user.role, "value")
+                        else str(user.role)
+                    ),
+                }
+
+                # Add tenant info if available
+                if hasattr(user, "tenant") and user.tenant:
+                    user_info["tenant"] = {
+                        "id": str(user.tenant.id),
+                        "name": user.tenant.name,
+                        "slug": user.tenant.slug,
+                    }
+
+                logger.info(f"Token verified for user: {user.email}")
+                return True, user_info
+            else:
+                logger.warning(f"Invalid or expired token: {token[:10]}...")
+                return False, None
 
         except Exception as e:
-            logger.error(f"Token verification failed: {e}")
-            return False
+            logger.error(f"Token verification with info failed: {e}")
+            return False, None
 
     async def complete_password_reset(
         self,
@@ -152,56 +194,51 @@ class PasswordResetService:
         alphabet = string.ascii_letters + string.digits
         return "".join(secrets.choice(alphabet) for _ in range(length))
 
-    def _send_password_reset_email_sync(self, user_id_str: str, token: str):
-        """SYNC wrapper for sending password reset email (for BackgroundTasks)"""
-        # Run async function in event loop
-        asyncio.create_task(
-            self._send_password_reset_email_async(UUID(user_id_str), token)
-        )
-
-    async def _send_password_reset_email_async(self, user_id: UUID, token: str):
+    async def _send_password_reset_email_async(
+        self, user_id: UUID, token: str, request: Request
+    ):
         """Async function to send password reset email"""
         # Create new database session for background task
         async with AsyncSessionLocal() as db:
             try:
                 # Get user with tenant relationship
-                result = await db.execute(select(User).where(User.id == user_id))
+                result = await db.execute(
+                    select(User)
+                    .where(User.id == user_id)
+                    .options(joinedload(User.tenant))  # Eager load tenant relationship
+                )
                 user = result.scalar_one_or_none()
 
                 if not user:
                     logger.error(f"User not found for password reset email: {user_id}")
                     return
 
-                # Create deep link for desktop app
-                deep_link = URLSchemeHandler.create_deep_link(
-                    "reset-password", token=token
-                )
+                user_name = f"{user.first_name} {user.last_name}"
+                user_email = user.email
 
                 # Get tenant name
-                tenant_name = getattr(
-                    user.tenant, "name", "Dental Clinic Management System"
-                )
+                tenant_name = getattr(user.tenant, "name", None)
 
-                template_data = {
-                    "user_name": f"{user.first_name} {user.last_name}",
-                    "user_email": user.email,
-                    "reset_token": token,
-                    "deep_link_url": deep_link,
-                    "expiry_hours": self.token_expiry_hours,
-                    "clinic_name": tenant_name,
-                    "support_email": email_settings.SUPPORT_EMAIL,
-                    "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"),
-                }
+                # Get tenant slug
+                tenant_slug = getattr(user.tenant, "slug", None)
+
+                # Get user agent and IP address
+                user_agent = request.headers.get("User-Agent")
+                ip_address = request.headers.get("X-Forwarded-For")
 
                 if not email_settings.SEND_EMAILS:
                     logger.info(f"Email sending disabled. Would send to: {user.email}")
                     return
 
-                response = await email_service.send_templated_email(
-                    EmailType.PASSWORD_RESET,
-                    to=[getattr(user, "email")],
-                    template_data=template_data,
+                response = await email_service.send_password_reset_v2(
+                    user_email=user_email,
+                    user_name=user_name,
+                    reset_token=token,
+                    tenant_name=tenant_name,
+                    tenant_slug=tenant_slug,
+                    user_agent=user_agent,
+                    ip_address=ip_address,
+                    expiry_hours=self.token_expiry_hours,
                 )
 
                 if response.success:
