@@ -14,11 +14,11 @@ class AppConfig:
 
     @property
     def APP_NAME(self):
-        return "Dental Clinic Management System"
+        return "KwantaDent Suite"
 
     @property
     def APP_VERSION(self):
-        return "2.0.0"
+        return "1.0.0"
 
     @property
     def ORGANIZATION(self):
@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     DB_NAME: str = Field("")
     DB_DOMAIN: str = Field("")
     DB_DRIVER: str = Field("postgresql+asyncpg")
+    DB_SSL_MODE: str = Field(
+        "prefer",
+        description="SSL mode: disable, allow, prefer, require, verify-ca, verify-full",
+    )
+
+    # Production Database URL (Neon DB)
+    POSTGRESQL_PRODUCTION_DB: str = Field(
+        "", description="Full PostgreSQL connection string for production (Neon DB)"
+    )
 
     SQLITE_MODE: bool = False
 
@@ -98,7 +107,7 @@ class Settings(BaseSettings):
 
     # Medical service settings
     FILE_ENCRYPTION_KEY: str = Field("")
-    MEDICAL_RECORDS_STORAGE_PATH: str = Field("")
+    MEDICAL_RECORDS_STORAGE_PATH: str = Field("./medical_records")
 
     # Payment Service
     STRIPE_SECRET_KEY: str = Field("")
@@ -115,12 +124,19 @@ class Settings(BaseSettings):
         return f"sqlite+aiosqlite:///{self.DB_NAME}.db"
 
     @property
+    def PRODUCTION_POSTGRESQL_DATABASE_URL(self) -> str:
+        return f"{self.POSTGRESQL_PRODUCTION_DB}"
+
+    @property
     def DATABASE_URL(self) -> str:
-        return (
-            self.SQLITE_DATABASE_URL
-            if self.SQLITE_MODE
-            else self.POSTGRESQL_DATABASE_URL
-        )
+        # return self.PRODUCTION_POSTGRESQL_DATABASE_URL
+
+        if self.SQLITE_MODE and self.ENVIRONMENT == "development":
+            return self.SQLITE_DATABASE_URL
+        elif self.ENVIRONMENT == "production":
+            return self.PRODUCTION_POSTGRESQL_DATABASE_URL
+        else:
+            return self.POSTGRESQL_DATABASE_URL
 
     @property
     def SYNC_DATABASE_URL(self) -> str:
