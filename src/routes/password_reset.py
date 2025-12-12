@@ -9,7 +9,7 @@ from fastapi import (
     Body,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update, func
+from sqlalchemy import update, func, select
 from typing import Any
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
@@ -50,12 +50,29 @@ async def request_password_reset(
 ) -> Any:
     """Request password reset endpoint"""
     try:
+        # Find user by email
+        result = await db.execute(
+            select(User).where(User.email == reset_request.email, User.is_active)
+        )
+        user = result.scalar_one_or_none()
+
+        # Always return success for security (don't reveal if user exists)
+        if not user:
+            logger.warning(
+                f"Password reset requested for non-existent email: {reset_request.email}"
+            )
+            return PasswordResetResponse(
+                success=True,
+                message="If an account with that email exists, a reset link has been sent.",
+            )
+
+        # Call the service with user_id
         result = await password_reset_service.request_password_reset(
-            db, reset_request.user_id, background_tasks
+            request, db, user.id, background_tasks
         )
 
         if result["success"]:
-            logger.info(f"Password reset requested for: {reset_request.user_id}")
+            logger.info(f"Password reset requested for: {reset_request.email}")
             return PasswordResetResponse(
                 success=True,
                 message="If an account with that email exists, a reset link has been sent.",
@@ -75,29 +92,34 @@ async def request_password_reset(
         )
 
 
-@router.post(
-    "/verify",
-    response_model=PasswordResetResponse,
-    summary="Verify reset token",
-    description="Verify if a password reset token is valid",
-)
+@router.post("/verify")
 async def verify_reset_token(
-    verify_request: PasswordResetVerify, db: AsyncSession = Depends(get_db)
+    verify_request: PasswordResetVerify, db: AsyncSession = Depends(get_db_session)
 ) -> Any:
-    """Verify reset token endpoint"""
+    """Verify reset token endpoint - USING ENHANCED SERVICE"""
     try:
-        is_valid = await password_reset_service.verify_reset_token(
+        # Use enhanced service method
+        is_valid, user_info = await password_reset_service.verify_reset_token(
             db, verify_request.token
         )
 
-        if is_valid:
-            return PasswordResetResponse(success=True, message="Token is valid")
+        if is_valid and user_info:
+            logger.info(f"Token verified for user: {user_info.get('email')}")
+            return PasswordResetResponse(
+                success=True,
+                message="Token is valid",
+                email=user_info.get("email"),
+                user_data=user_info,
+            )
         else:
+            logger.warning(f"Invalid or expired token: {verify_request.token[:10]}...")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired reset token",
             )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Token verification failed: {e}")
         raise HTTPException(
