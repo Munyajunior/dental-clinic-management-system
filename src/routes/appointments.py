@@ -17,8 +17,10 @@ from schemas.appointment_schemas import (
 from services.appointment_service import appointment_service
 from services.auth_service import auth_service
 from utils.rate_limiter import limiter
+from utils.logger import setup_logger
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
+logger = setup_logger("APPOINTMENT_ROUTES")
 
 
 @router.get(
