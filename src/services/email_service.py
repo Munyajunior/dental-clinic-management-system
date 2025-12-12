@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import time
 from datetime import datetime
+import socket
 
 from core.email_config import email_settings
 from schemas.email_schemas import (
@@ -17,9 +18,9 @@ from schemas.email_schemas import (
     BulkEmailRequest,
     EmailType,
 )
-from utils.url_scheme_handler import URLSchemeHandler
 from utils.logger import setup_logger
 from custom_types.resend_types import ResendSendParams
+from utils.url_scheme_handler import URLSchemeHandler
 
 logger = setup_logger("EMAIL_SERVICE")
 
@@ -54,11 +55,21 @@ class EmailTemplateManager:
     def template_exists(self, template_name: str) -> bool:
         """Check if a template exists"""
         try:
-            template_path = f"{template_name}.html"
+            template_path = (
+                template_name
+                if template_name.endswith(".html")
+                else f"{template_name}.html"
+            )
             self.env.get_template(template_path)
             return True
         except Exception:
-            return False
+            # Also try without extension
+            try:
+                self.env.get_template(template_name)
+                return True
+            except Exception as e:
+                logger.debug(f"Template {template_name} not found: {e}")
+                return False
 
     def render_template(
         self, template_name: str, context: Dict[str, Any]
@@ -106,6 +117,16 @@ class EmailTemplateManager:
                 detail=f"Failed to render email template: {str(e)}",
             )
 
+    def get_template_path(self, template_name: str) -> Optional[str]:
+        """Get the full path to a template file"""
+        try:
+            template_path = os.path.join(self.template_dir, f"{template_name}.html")
+            if os.path.exists(template_path):
+                return template_path
+            return None
+        except Exception:
+            return None
+
 
 class ResendEmailService:
     """Email service using Resend API with proper typing"""
@@ -114,6 +135,9 @@ class ResendEmailService:
         self.template_manager = EmailTemplateManager()
         resend.api_key = email_settings.RESEND_API_KEY
         self.client = resend
+
+        # URL scheme handler for creating deep links
+        self.url_handler = URLSchemeHandler()
 
         # Enhanced retry configuration
         self.max_retries = 3
@@ -134,7 +158,7 @@ class ResendEmailService:
             EmailType.CUSTOM_EMAIL: {"template": "custom_email", "subject": ""},
             EmailType.WELCOME_TENANT: {
                 "template": "welcome_tenant",
-                "subject": "Welcome to KwantaBit Dental Clinic Management Suite - Your Default Admin Credentials",
+                "subject": "Welcome to KwantaDent Dental Clinic Management Suite - Your Default Admin Credentials",
             },
             EmailType.EMAIL_VERIFICATION: {
                 "template": "email_verification",
@@ -195,6 +219,10 @@ class ResendEmailService:
 
             for email_type, config in self.template_configs.items():
                 template_name = config["template"]
+
+                # Debug: Log what we're looking for
+                logger.debug(f"Checking template for {email_type}: {template_name}")
+
                 html_exists = self.template_manager.template_exists(template_name)
                 validation_results[email_type.value] = html_exists
 
@@ -202,6 +230,24 @@ class ResendEmailService:
                     logger.warning(
                         f"Missing template for {email_type}: {template_name}.html"
                     )
+                    # Try to find the actual file
+                    template_path = self.template_manager.get_template_path(
+                        template_name
+                    )
+                    if template_path and os.path.exists(template_path):
+                        logger.warning(f"  File actually exists at: {template_path}")
+                        logger.warning(
+                            f"  File size: {os.path.getsize(template_path)} bytes"
+                        )
+                        # Check file permissions
+                        try:
+                            with open(template_path, "r", encoding="utf-8") as f:
+                                content = f.read(100)  # Read first 100 chars
+                                logger.warning(f"  File starts with: {content}")
+                        except Exception as read_err:
+                            logger.warning(f"  Cannot read file: {read_err}")
+                    else:
+                        logger.warning(f"  File not found on disk")
                 else:
                     logger.info(
                         f"✓ Template found: {template_name}.html for {email_type}"
@@ -214,10 +260,38 @@ class ResendEmailService:
                 f"Template validation: {found_templates}/{total_templates} templates found"
             )
 
+            # Log missing templates
+            missing = [k for k, v in validation_results.items() if not v]
+            if missing:
+                logger.warning(f"Missing templates: {missing}")
+                # Provide helpful suggestion
+                logger.warning(
+                    f"Check if these files exist in: {self.template_manager.template_dir}"
+                )
+                logger.warning(
+                    f"Expected files: {[f'{name}.html' for name in missing]}"
+                )
+
             return validation_results
 
-        except Exception as e:
-            logger.error(f"Template validation failed: {e}")
+        except (
+            Exception
+        ) as validation_error:  # Fixed: Changed variable name from 'e' to 'validation_error'
+            logger.error(
+                f"Template validation failed: {validation_error}", exc_info=True
+            )
+            # Try to provide more context
+            try:
+                logger.error(
+                    f"Template directory: {self.template_manager.template_dir}"
+                )
+                if os.path.exists(self.template_manager.template_dir):
+                    files = os.listdir(self.template_manager.template_dir)
+                    logger.error(f"Files in directory: {files}")
+                else:
+                    logger.error(f"Template directory does not exist!")
+            except Exception as dir_error:
+                logger.error(f"Cannot list directory: {dir_error}")
             return {}
 
     def _prepare_resend_params(
@@ -232,7 +306,7 @@ class ResendEmailService:
             "text": text_content,
         }
 
-        # Add optional fields with proper typing
+        # Add optional fields
         if email_request.cc:
             params["cc"] = email_request.cc
         if email_request.bcc:
@@ -330,7 +404,7 @@ class ResendEmailService:
                     or "getaddrinfo failed" in error_msg
                 ):
                     logger.error(
-                        f"DNS resolution failed for Resend API. Check internet connection."
+                        "DNS resolution failed for Resend API. Check internet connection."
                     )
                     break  # Don't retry DNS errors
                 elif "Connection" in error_msg or "Network" in error_msg:
@@ -424,8 +498,6 @@ class ResendEmailService:
         """Check email service connectivity"""
         try:
             # Simple check by attempting to resolve the Resend API hostname
-            import socket
-
             start_time = time.time()
             socket.gethostbyname("api.resend.com")
             dns_time = time.time() - start_time
@@ -469,10 +541,10 @@ class ResendEmailService:
     async def send_tenant_welcome_email(
         self, user_email: str, user_name: str, temp_password: str, tenant_slug: str
     ) -> EmailResponse:
-        """Send tenant welcome email with fallback to logging"""
+        """Send tenant welcome email with deep link for one-click login"""
         try:
             # Create deep link for one-click login
-            deep_link = f"{URLSchemeHandler.SCHEME}://login?tenant={tenant_slug}"
+            deep_link = self.url_handler.create_deep_link("login", tenant=tenant_slug)
 
             # Create a clickable link that works across different platforms
             clickable_link = f"""
@@ -486,14 +558,20 @@ class ResendEmailService:
                 f"https://app.kwantabit-dental.com/launch?tenant={tenant_slug}"
             )
 
+            # Include instructions for first-time users
+            app_instructions = self._get_app_launch_instructions()
+
             template_data = {
                 "user_name": user_name,
                 "user_email": user_email,
                 "temporary_password": temp_password,
                 "tenant_slug": tenant_slug,
                 "deep_link_url": deep_link,
-                "clickable_link": clickable_link,  # Add this for HTML template
-                "web_fallback_url": web_fallback_url,  # Add web fallback
+                "clickable_link": clickable_link,
+                "web_fallback_url": web_fallback_url,
+                "app_instructions": app_instructions,
+                "scheme_name": email_settings.SCHEME,
+                "app_name": email_settings.APP_NAME,
                 "clinic_name": email_settings.FROM_NAME,
                 "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
                 "support_email": email_settings.FROM_EMAIL,
@@ -513,28 +591,40 @@ class ResendEmailService:
                     f"EMAIL FAILED - Tenant welcome email could not be sent to {user_email}. "
                     f"Manual intervention required. Credentials: "
                     f"Email: {user_email}, Temp Password: {temp_password}, "
-                    f"Tenant: {tenant_slug}"
+                    f"Tenant: {tenant_slug}, Deep Link: {deep_link}"
                 )
 
             return response
 
         except Exception as e:
             logger.error(f"Failed to prepare tenant welcome email: {e}")
-            # Still return a response indicating failure
             return EmailResponse(
                 success=False,
                 error=f"Failed to prepare email: {str(e)}",
                 recipients=[user_email],
             )
 
+    def _get_app_launch_instructions(self) -> str:
+        """Get application launch instructions for email templates"""
+        return f"""
+        <p><strong>How to launch the application:</strong></p>
+        <ol>
+            <li><strong>One-click launch:</strong> Click the "Launch Dental Clinic Application" button above</li>
+            <li><strong>If prompted:</strong> Allow the application to open</li>
+            <li><strong>First time?</strong> The application will be installed automatically</li>
+            <li><strong>Manual launch:</strong> Copy and paste this link into your browser: <code>{email_settings.SCHEME}://login</code></li>
+        </ol>
+        <p><strong>Note:</strong> On first use, your system may ask for permission to open the application. 
+        This is normal and required for the application to function properly.</p>
+        """
+
     async def send_password_reset(
         self, user_email: str, user_name: str, reset_token: str, expiry_hours: int = 24
     ) -> EmailResponse:
         """Send password reset email with deep link"""
         try:
-
             # Create deep link for password reset
-            deep_link = URLSchemeHandler.create_deep_link(
+            deep_link = self.url_handler.create_deep_link(
                 "reset-password", token=reset_token
             )
 
@@ -550,14 +640,34 @@ class ResendEmailService:
                 f"https://app.kwantabit-dental.com/reset-password?token={reset_token}"
             )
 
+            # Include reset instructions
+            reset_instructions = f"""
+            <p><strong>Password Reset Instructions:</strong></p>
+            <ol>
+                <li>Click the "Reset Password" button above</li>
+                <li>If prompted, allow "{email_settings.APP_NAME}" to open</li>
+                <li>Enter your new password in the application</li>
+                <li>Click "Update Password" to complete the reset</li>
+            </ol>
+            <p><strong>Note:</strong> This link expires in {expiry_hours} hours for security.</p>
+            <p>If the button doesn't work, copy and paste this link into your browser: <code>{deep_link}</code></p>
+            """
+
+            current_datetime = datetime.now()
+
             template_data = {
                 "user_name": user_name,
                 "reset_token": reset_token,
                 "deep_link_url": deep_link,
                 "clickable_link": clickable_link,
                 "web_fallback_url": web_fallback_url,
+                "reset_instructions": reset_instructions,
                 "expiry_hours": expiry_hours,
+                "app_name": email_settings.APP_NAME,
+                "scheme_name": email_settings.SCHEME,
                 "clinic_name": email_settings.FROM_NAME,
+                "current_year": current_datetime.year,
+                "now": current_datetime,
             }
 
             # Log the password reset attempt for security audit
@@ -574,7 +684,6 @@ class ResendEmailService:
 
         except Exception as e:
             logger.error(f"Failed to prepare password reset email: {e}")
-            # Still return a response indicating failure
             return EmailResponse(
                 success=False,
                 error=f"Failed to prepare password reset email: {str(e)}",
@@ -587,6 +696,7 @@ class ResendEmailService:
         user_name: str,
         reset_token: str,
         tenant_slug: str = None,
+        tenant_name: str = None,
         user_agent: str = None,
         ip_address: str = None,
         expiry_hours: int = 24,
@@ -597,16 +707,16 @@ class ResendEmailService:
             deep_link_params = {"token": reset_token}
             if tenant_slug:
                 deep_link_params["tenant"] = tenant_slug
-            if user_agent:
-                # Hash user agent for privacy
-                import hashlib
 
-                user_agent_hash = hashlib.sha256(user_agent.encode()).hexdigest()[:8]
-                deep_link_params["context"] = user_agent_hash
-
-            deep_link = URLSchemeHandler.create_deep_link(
+            deep_link = self.url_handler.create_deep_link(
                 "reset-password", **deep_link_params
             )
+
+            clickable_link = f"""
+                <a href="{deep_link}" class="button" style="text-decoration: none; color: white; background: linear-gradient(135deg, #ef4444, #dc2626); padding: 14px 28px; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; border: none; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);">
+                    🔒 Reset Password in Application
+                </a>
+                """
 
             # Create platform-specific instructions
             platform_info = (
@@ -615,12 +725,17 @@ class ResendEmailService:
                 else None
             )
 
+            # Get platform-specific instructions
+            platform_instructions = self._get_platform_instructions(platform_info)
+            current_datetime = datetime.now()
+
             template_data = {
                 "user_name": user_name,
                 "reset_token": reset_token,
                 "deep_link_url": deep_link,
+                "clickable_link": clickable_link,
                 "expiry_hours": expiry_hours,
-                "clinic_name": email_settings.FROM_NAME,
+                "clinic_name": tenant_name,
                 "support_email": email_settings.SUPPORT_EMAIL,
                 "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
                 "tenant_slug": tenant_slug if tenant_slug else "your clinic",
@@ -628,6 +743,11 @@ class ResendEmailService:
                 "ip_address": ip_address if ip_address else "Not available",
                 "request_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "platform": platform_info,
+                "platform_instructions": platform_instructions,
+                "scheme_name": email_settings.SCHEME,
+                "app_name": email_settings.APP_NAME,
+                "current_year": current_datetime.year,
+                "now": current_datetime,
                 "security_context": {
                     "token_length": len(reset_token),
                     "token_type": "JWT" if len(reset_token) > 100 else "Simple",
@@ -639,7 +759,8 @@ class ResendEmailService:
             logger.info(
                 f"Enhanced password reset for {user_email}. "
                 f"Platform: {platform_info}, IP: {ip_address}, "
-                f"Expires: {expiry_hours}h, Tenant: {tenant_slug}"
+                f"Expires: {expiry_hours}h, Tenant: {tenant_slug}, "
+                f"Deep Link: {deep_link}"
             )
 
             return await self.send_templated_email(
@@ -654,6 +775,35 @@ class ResendEmailService:
             return await self.send_password_reset(
                 user_email, user_name, reset_token, expiry_hours
             )
+
+    def _get_platform_instructions(self, platform_info: Dict[str, Any]) -> str:
+        """Get platform-specific instructions for launching the app"""
+        if not platform_info:
+            return "Click the link to reset your password in the application."
+
+        device_type = platform_info.get("device", "Unknown")
+        os_type = platform_info.get("os", "Unknown")
+
+        if device_type == "Mobile" or device_type == "Tablet":
+            return f"""
+            <p><strong>On your {os_type} device:</strong></p>
+            <ol>
+                <li>Tap the "Reset Password" link</li>
+                <li>If prompted, tap "Open in {email_settings.APP_NAME}"</li>
+                <li>If you don't have the app installed, you'll be prompted to download it</li>
+                <li>Follow the in-app instructions to reset your password</li>
+            </ol>
+            """
+        else:  # Desktop
+            return f"""
+            <p><strong>On your {os_type} computer:</strong></p>
+            <ol>
+                <li>Click the "Reset Password" link</li>
+                <li>If prompted, allow "{email_settings.APP_NAME}" to open</li>
+                <li>If you don't have the app installed, it will be installed automatically</li>
+                <li>Follow the in-app instructions to reset your password</li>
+            </ol>
+            """
 
     def _detect_platform_from_user_agent(self, user_agent: str) -> Dict[str, Any]:
         """Detect platform from user agent string"""
@@ -718,17 +868,46 @@ class ResendEmailService:
             }
 
     async def send_email_verification(
-        self, user_email: str, user_name: str, verification_token: str
+        self,
+        user_email: str,
+        user_name: str,
+        verification_token: str,
+        user_agent: str = None,
     ) -> EmailResponse:
         """Send email verification with deep link"""
-        deep_link = URLSchemeHandler.create_deep_link(
+        deep_link = self.url_handler.create_deep_link(
             "verify-email", token=verification_token
         )
+
+        # Create verification instructions
+        verification_instructions = f"""
+        <p><strong>Email Verification Instructions:</strong></p>
+        <ol>
+            <li>Click the verification link below</li>
+            <li>Allow "{email_settings.APP_NAME}" to open if prompted</li>
+            <li>Your email will be verified automatically</li>
+            <li>You can then log in to your account</li>
+        </ol>
+        <p>If the link doesn't work, copy and paste this into your browser: <code>{deep_link}</code></p>
+        """
+        # Create platform-specific instructions
+        platform_info = (
+            self._detect_platform_from_user_agent(user_agent) if user_agent else None
+        )
+
+        # Get platform-specific instructions
+        platform_instructions = self._get_platform_instructions(platform_info)
 
         template_data = {
             "user_name": user_name,
             "verification_token": verification_token,
             "deep_link_url": deep_link,
+            "verification_instructions": verification_instructions,
+            "app_name": email_settings.APP_NAME,
+            "app_version": self.url_handler.APP_VERSION,
+            "platform_instructions": platform_instructions,
+            "current_year": datetime.now().year,
+            "scheme_name": email_settings.SCHEME,
             "clinic_name": email_settings.FROM_NAME,
         }
 
@@ -746,8 +925,9 @@ class ResendEmailService:
         dentist_name: str,
         appointment_type: str,
         location: str = "Main Clinic",
+        appointment_id: str = None,
     ) -> EmailResponse:
-        """Send appointment confirmation email"""
+        """Send appointment confirmation email with optional deep link"""
         template_data = {
             "patient_name": patient_name,
             "appointment_date": appointment_date,
@@ -756,7 +936,29 @@ class ResendEmailService:
             "location": location,
             "clinic_name": email_settings.FROM_NAME,
             "contact_email": email_settings.FROM_EMAIL,
+            "patient_email": patient_email,
+            "current_year": datetime.now().year,
         }
+
+        # Add deep link if appointment ID is provided
+        if appointment_id:
+            deep_link = self.url_handler.create_deep_link(
+                "open-appointment", id=appointment_id
+            )
+            template_data.update(
+                {
+                    "deep_link_url": deep_link,
+                    "has_deep_link": True,
+                    "app_name": email_settings.APP_NAME,
+                    "appointment_id": appointment_id,
+                }
+            )
+        else:
+            template_data.update(
+                {
+                    "has_deep_link": False,
+                }
+            )
 
         return await self.send_templated_email(
             EmailType.APPOINTMENT_CONFIRMATION,
@@ -771,8 +973,9 @@ class ResendEmailService:
         appointment_date: str,
         dentist_name: str,
         days_until: int = 1,
+        appointment_id: str = None,
     ) -> EmailResponse:
-        """Send appointment reminder email"""
+        """Send appointment reminder email with optional deep link"""
         template_data = {
             "patient_name": patient_name,
             "appointment_date": appointment_date,
@@ -780,7 +983,28 @@ class ResendEmailService:
             "days_until": days_until,
             "clinic_name": email_settings.FROM_NAME,
             "contact_email": email_settings.FROM_EMAIL,
+            "current_year": datetime.now().year,
         }
+
+        # Add deep link if appointment ID is provided
+        if appointment_id:
+            deep_link = self.url_handler.create_deep_link(
+                "open-appointment", id=appointment_id
+            )
+            template_data.update(
+                {
+                    "deep_link_url": deep_link,
+                    "has_deep_link": True,
+                    "app_name": email_settings.APP_NAME,
+                    "scheme_name": email_settings.SCHEME,
+                }
+            )
+        else:
+            template_data.update(
+                {
+                    "has_deep_link": False,
+                }
+            )
 
         return await self.send_templated_email(
             EmailType.APPOINTMENT_REMINDER,
@@ -801,10 +1025,23 @@ class ResendEmailService:
         office_hours: str,
         temporary_password: Optional[str] = None,
     ) -> EmailResponse:
-        """Send welcome email to new staff member"""
+        """Send welcome email to new staff member with deep link"""
         try:
             # Create deep link for one-click login
-            deep_link = URLSchemeHandler.create_deep_link("login", tenant=clinic_slug)
+            deep_link = self.url_handler.create_deep_link("login", tenant=clinic_slug)
+
+            # Create staff-specific instructions
+            staff_instructions = f"""
+            <p><strong>Getting Started:</strong></p>
+            <ol>
+                <li>Click the launch button below to open the application</li>
+                <li>Log in with your email and temporary password</li>
+                <li>You'll be prompted to set a new password on first login</li>
+                <li>Complete your profile setup</li>
+                <li>Review the training materials provided</li>
+            </ol>
+            <p>If you need assistance, contact {manager_name} at {manager_email} or use our WhatsApp support.</p>
+            """
 
             template_data = {
                 "staff_name": staff_name,
@@ -817,10 +1054,13 @@ class ResendEmailService:
                 "manager_email": manager_email,
                 "temporary_password": temporary_password,
                 "deep_link_url": deep_link,
+                "staff_instructions": staff_instructions,
                 "support_email": email_settings.FROM_EMAIL,
                 "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
                 "training_guide_url": email_settings.SETUP_GUIDE_URL,
                 "office_hours": office_hours,
+                "app_name": email_settings.APP_NAME,
+                "scheme_name": email_settings.SCHEME,
             }
 
             response = await self.send_templated_email(
@@ -834,7 +1074,7 @@ class ResendEmailService:
                 logger.warning(
                     f"STAFF WELCOME EMAIL FAILED - Could not send to {staff_email}. "
                     f"Manual intervention required. Staff: {staff_name}, Role: {staff_role}, "
-                    f"Clinic: {clinic_name}"
+                    f"Clinic: {clinic_name}, Deep Link: {deep_link}"
                 )
 
             return response
@@ -852,8 +1092,9 @@ class ResendEmailService:
         patient_email: str,
         patient_name: str,
         temporary_password: Optional[str] = None,
+        clinic_slug: Optional[str] = None,
     ) -> EmailResponse:
-        """Send welcome email to new patient"""
+        """Send welcome email to new patient with optional deep link"""
         template_data = {
             "patient_name": patient_name,
             "clinic_name": email_settings.FROM_NAME,
@@ -861,6 +1102,31 @@ class ResendEmailService:
             "temporary_password": temporary_password,
             "has_password": temporary_password is not None,
         }
+
+        # Add deep link if clinic slug is provided
+        if clinic_slug:
+            deep_link = self.url_handler.create_deep_link("login", tenant=clinic_slug)
+            template_data.update(
+                {
+                    "deep_link_url": deep_link,
+                    "has_deep_link": True,
+                    "app_name": email_settings.APP_NAME,
+                    "patient_instructions": """
+                <p>You can access your patient portal by clicking the link above. 
+                Use your email and temporary password to log in.</p>
+                """,
+                }
+            )
+        else:
+            template_data.update(
+                {
+                    "has_deep_link": False,
+                    "patient_instructions": f"""
+                <p>You can access your patient portal by visiting our clinic website 
+                or contacting us at {email_settings.FROM_EMAIL}.</p>
+                """,
+                }
+            )
 
         return await self.send_templated_email(
             EmailType.WELCOME_PATIENT, to=[patient_email], template_data=template_data
@@ -917,8 +1183,6 @@ class ResendEmailService:
     async def verify_email(self, email: str) -> bool:
         """Verify email address using Resend"""
         try:
-            # Resend doesn't have direct email verification, but we can validate format
-            # For actual verification, you might want to use a dedicated service
             from email_validator import validate_email, EmailNotValidError
 
             try:
@@ -931,12 +1195,17 @@ class ResendEmailService:
             return False
 
     async def send_test_email(
-        self, to_email: str, test_type: str = "connectivity"
+        self, to_email: str, test_type: str = "connectivity", test_tenant: bool = False
     ) -> EmailResponse:
         """Send a test email to verify email service functionality"""
         try:
             logger.info(
                 f"Sending test email to {to_email} for {test_type} verification"
+            )
+
+            # Create a test deep link
+            test_deep_link = self.url_handler.create_deep_link(
+                "login", tenant="test-clinic"
             )
 
             # Test template data
@@ -947,17 +1216,34 @@ class ResendEmailService:
                 "support_email": email_settings.SUPPORT_EMAIL,
                 "whatsapp_support": email_settings.WHATSAPP_SUPPORT,
                 "service_status": "operational",
+                "deep_link_url": test_deep_link,
+                "scheme_name": email_settings.SCHEME,
+                "app_name": email_settings.APP_NAME,
                 "test_details": {
                     "recipient": to_email,
                     "purpose": f"Email service {test_type} test",
                     "environment": (
                         "production" if email_settings.SEND_EMAILS else "development"
                     ),
+                    "deep_link_supported": True,
                 },
             }
 
             # Use a simple test template or fallback to welcome template
-            if self.template_manager.template_exists("test_email"):
+            if test_tenant:
+                template_name = "welcome_tenant"
+                subject = f"Email Service Test - {test_type.title()}"
+                template_data.update(
+                    {
+                        "user_name": "Test Recipient",
+                        "user_email": to_email,
+                        "temporary_password": "test-password-123",
+                        "tenant_slug": "test-tenant",
+                        "setup_guide_url": email_settings.SETUP_GUIDE_URL,
+                        "download_url": email_settings.DOWNLOAD_URL,
+                    }
+                )
+            elif self.template_manager.template_exists("test_email"):
                 template_name = "test_email"
                 subject = f"✓ Email Service Test - {test_type.title()}"
             else:
@@ -969,7 +1255,7 @@ class ResendEmailService:
                         "user_email": to_email,
                         "temporary_password": "test-password-123",
                         "tenant_slug": "test-tenant",
-                        "deep_link_url": "kwantabit-dental://test",
+                        "deep_link_url": test_deep_link,
                         "setup_guide_url": email_settings.SETUP_GUIDE_URL,
                         "download_url": email_settings.DOWNLOAD_URL,
                     }
@@ -1010,6 +1296,12 @@ class ResendEmailService:
         test_results = {
             "connectivity": health_check,
             "templates_available": list(self.template_configs.keys()),
+            "url_scheme_info": {
+                "scheme": email_settings.SCHEME,
+                "app_name": email_settings.APP_NAME,
+                "registered": self.url_handler.is_protocol_registered(),
+                "supported_actions": self.url_handler.get_supported_actions(),
+            },
             "configuration": {
                 "from_email": email_settings.FROM_EMAIL,
                 "from_name": email_settings.FROM_NAME,
@@ -1053,7 +1345,7 @@ class ResendEmailService:
     ) -> Dict[str, Any]:
         """Validate password reset token (simplified version for email service)"""
         try:
-            # In a real implementation, you would validate against your auth service
+            # TODO validate against auth service
             # This is a simplified version for demonstration
             import jwt
 
@@ -1065,7 +1357,7 @@ class ResendEmailService:
             if len(token) > 100 and token.count(".") == 2:
                 # Try to decode JWT
                 try:
-                    # This would normally use your SECRET_KEY
+                    # TODO use SECRET_KEY
                     # decoded = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
                     return {
                         "valid": True,
@@ -1111,11 +1403,16 @@ class ResendEmailService:
         try:
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
 
+            # Create a login deep link for the user
+            login_deep_link = self.url_handler.create_deep_link("login")
+
             template_data = {
                 "user_name": user_name,
                 "reset_time": current_time,
                 "clinic_name": email_settings.FROM_NAME,
                 "support_email": email_settings.SUPPORT_EMAIL,
+                "deep_link_url": login_deep_link,
+                "app_name": email_settings.APP_NAME,
                 "device_info": (
                     device_info if device_info else {"type": "Unknown device"}
                 ),
@@ -1126,12 +1423,17 @@ class ResendEmailService:
                     "Review recent login activity",
                     "Log out of unused devices",
                 ],
+                "next_steps": [
+                    f"Click <a href='{login_deep_link}'>here</a> to log in with your new password",
+                    "Review your account security settings",
+                    "Update your profile information if needed",
+                ],
             }
 
             logger.info(f"Password reset success notification sent to {user_email}")
 
             return await self.send_templated_email(
-                EmailType.SECURITY_ALERT,  # You might want to create a specific template for this
+                EmailType.SECURITY_ALERT,
                 to=[user_email],
                 template_data=template_data,
             )
@@ -1143,6 +1445,24 @@ class ResendEmailService:
                 error=f"Failed to send success notification: {str(e)}",
                 recipients=[user_email],
             )
+
+    def create_sample_deep_links(self) -> Dict[str, str]:
+        """Create sample deep links for testing and documentation"""
+        return {
+            "login": self.url_handler.create_deep_link("login", tenant="sample-clinic"),
+            "reset_password": self.url_handler.create_deep_link(
+                "reset-password", token="sample-token-123"
+            ),
+            "verify_email": self.url_handler.create_deep_link(
+                "verify-email", token="verification-token-456"
+            ),
+            "open_appointment": self.url_handler.create_deep_link(
+                "open-appointment", id="appointment-789"
+            ),
+            "open_patient": self.url_handler.create_deep_link(
+                "open-patient", id="patient-101"
+            ),
+        }
 
 
 # Global email service instance
