@@ -1,6 +1,6 @@
 # src/schemas/password_reset_schemas.py
 from pydantic import BaseModel, EmailStr, field_validator
-from typing import Optional
+from typing import Optional, Dict, Any
 from .base_schemas import BaseSchema, ResponseBase
 from schemas.user_schemas import UserPublic
 from uuid import UUID
@@ -9,7 +9,7 @@ from uuid import UUID
 class PasswordResetRequest(BaseModel):
     """Password reset request schema"""
 
-    user_id: UUID
+    email: EmailStr
 
 
 class PasswordResetVerify(BaseModel):
@@ -38,6 +38,8 @@ class PasswordResetResponse(ResponseBase):
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     user: Optional[UserPublic] = None
+    email: Optional[str] = None  # Add email field for token verification
+    user_data: Optional[Dict[str, Any]] = None  # Add user data field
 
 
 class EnforcedPasswordReset(BaseSchema):
