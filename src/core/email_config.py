@@ -16,6 +16,9 @@ class EmailSettings(BaseSettings):
     SETUP_GUIDE_URL: str
     WHATSAPP_SUPPORT: str
     DOWNLOAD_URL: str
+    APP_NAME: str = "KwantaDent Suite"
+    APP_VERSION: str = "1.0.0"
+    SCHEME: str = "kwantabit-kwantadent"
 
     # Template settings
     TEMPLATE_DIR: str
