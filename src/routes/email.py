@@ -127,25 +127,6 @@ async def send_welcome_staff_email(
         )
 
 
-@router.get("/templates", summary="List email templates")
-async def list_email_templates(
-    current_user: Any = Depends(auth_service.get_current_user),
-) -> Any:
-    """List available email templates"""
-    templates = []
-    for email_type, config in email_service.template_configs.items():
-        templates.append(
-            {
-                "type": email_type.value,
-                "name": config["template"].replace("_", " ").title(),
-                "description": f"Template for {email_type.value.replace('_', ' ')}",
-                "subject": config["subject"],
-            }
-        )
-
-    return {"templates": templates}
-
-
 @router.post(
     "/preview",
     summary="Preview email template",
@@ -475,7 +456,9 @@ async def send_test_email(
 
         # Send test email
         response = await email_service.send_test_email(
-            to_email=test_request.email, test_type=test_request.test_type
+            to_email=test_request.email,
+            test_type=test_request.test_type,
+            test_tenant=True,
         )
 
         if response.success:
